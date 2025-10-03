@@ -1,0 +1,13 @@
+# Large data files
+data/cifar-10-python.tar.gz
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
