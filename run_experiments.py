@@ -17,6 +17,12 @@ def run_experiment_2():
     subprocess.run([sys.executable, "experiments/exp2_special_pixel.py"])
 
 
+def run_experiment_3():
+    print("Running Experiment 3: Depth sweep at fixed MI=2.5 bits")
+    print("=" * 50)
+    subprocess.run([sys.executable, "experiments/exp3_depth_sweep.py"])
+
+
 def print_results():
     from utils.results_utils import print_summary
     
@@ -43,6 +49,7 @@ def main():
     parser = argparse.ArgumentParser(description='Run overfitting experiments')
     parser.add_argument('--exp1', action='store_true', help='Run experiment 1 (varying dataset sizes)')
     parser.add_argument('--exp2', action='store_true', help='Run experiment 2 (special pixel with noise)')
+    parser.add_argument('--exp3', action='store_true', help='Run experiment 3 (depth sweep at fixed MI)')
     parser.add_argument('--all', action='store_true', help='Run all experiments')
     parser.add_argument('--results', action='store_true', help='Print results summary')
     parser.add_argument('--plot', action='store_true', help='Generate plots from results')
@@ -54,6 +61,9 @@ def main():
     
     if args.all or args.exp2:
         run_experiment_2()
+
+    if args.all or args.exp3:
+        run_experiment_3()
     
     if args.results:
         print_results()

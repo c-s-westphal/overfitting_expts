@@ -104,10 +104,54 @@ def plot_experiment_2():
     print("Experiment 2 plot saved to plots/experiment_2_mi_vs_gap.png")
 
 
+def plot_experiment_3():
+    model = 'PreActResNet'
+    color = 'teal'
+
+    plt.figure(figsize=(12, 8))
+
+    try:
+        results = load_experiment_results('exp3', model)
+        aggregated = aggregate_results(results)
+
+        depths = results['depths']
+        gaps_mean = aggregated['generalization_gaps_mean']
+        gaps_std = aggregated['generalization_gaps_std']
+
+        valid_depths = []
+        valid_gaps_mean = []
+        valid_gaps_std = []
+
+        for d, gap_mean, gap_std in zip(depths, gaps_mean, gaps_std):
+            if gap_mean is not None:
+                valid_depths.append(d)
+                valid_gaps_mean.append(gap_mean)
+                valid_gaps_std.append(gap_std)
+
+        if valid_depths:
+            plt.errorbar(valid_depths, valid_gaps_mean, yerr=valid_gaps_std,
+                         label=model, color=color, marker='o', capsize=5)
+
+    except FileNotFoundError:
+        print(f"Results not found for {model} (exp3)")
+
+    plt.xlabel('Depth (Total layers)')
+    plt.ylabel('Generalization Gap (%)')
+    plt.title('Experiment 3: Generalization Gap vs Depth (MI=2.5 bits)')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    os.makedirs('plots', exist_ok=True)
+    plt.savefig('plots/experiment_3_gap_vs_depth.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print("Experiment 3 plot saved to plots/experiment_3_gap_vs_depth.png")
+
 def main():
     print("Generating plots...")
     plot_experiment_1()
     plot_experiment_2()
+    plot_experiment_3()
     print("All plots generated successfully!")
 
 

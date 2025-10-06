@@ -9,6 +9,8 @@ def load_experiment_results(experiment_type, model_name):
         path = f'results/exp1/{model_name}_dataset_size_results.npz'
     elif experiment_type == 'exp2':
         path = f'results/exp2/{model_name}_special_pixel_results.npz'
+    elif experiment_type == 'exp3':
+        path = f'results/exp3/{model_name}_depth_sweep_results.npz'
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
     
@@ -59,13 +61,19 @@ def print_summary(experiment_type, model_name):
             valid = aggregated['valid_counts'][i]
             if aggregated['generalization_gaps_mean'][i] is not None:
                 print(f"Size {size:6d}: Gap = {aggregated['generalization_gaps_mean'][i]:.2f} ± {aggregated['generalization_gaps_std'][i]:.2f} (valid: {valid}/5)")
-    else:
+    elif experiment_type == 'exp2':
         noise_levels = results['noise_levels']
         mi_values = results['mi_values']
         for i, (noise, mi) in enumerate(zip(noise_levels, mi_values)):
             valid = aggregated['valid_counts'][i]
             if aggregated['generalization_gaps_mean'][i] is not None:
                 print(f"Noise {noise:.3f} (MI={mi:.3f}): Gap = {aggregated['generalization_gaps_mean'][i]:.2f} ± {aggregated['generalization_gaps_std'][i]:.2f} (valid: {valid}/5)")
+    elif experiment_type == 'exp3':
+        depths = results['depths']
+        for i, depth in enumerate(depths):
+            valid = aggregated['valid_counts'][i]
+            if aggregated['generalization_gaps_mean'][i] is not None:
+                print(f"Depth {depth:4d}: Gap = {aggregated['generalization_gaps_mean'][i]:.2f} ± {aggregated['generalization_gaps_std'][i]:.2f} (valid: {valid}/3)")
 
 
 def load_exp1_results_from_per_seed(model_name, results_dir='results/exp1'):
