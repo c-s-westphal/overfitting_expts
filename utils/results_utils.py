@@ -1,5 +1,7 @@
 import numpy as np
 import os
+import re
+from utils.mi_calculation import calculate_mutual_information
 
 
 def load_experiment_results(experiment_type, model_name):
@@ -64,3 +66,186 @@ def print_summary(experiment_type, model_name):
             valid = aggregated['valid_counts'][i]
             if aggregated['generalization_gaps_mean'][i] is not None:
                 print(f"Noise {noise:.3f} (MI={mi:.3f}): Gap = {aggregated['generalization_gaps_mean'][i]:.2f} ± {aggregated['generalization_gaps_std'][i]:.2f} (valid: {valid}/5)")
+
+
+def load_exp1_results_from_per_seed(model_name, results_dir='results/exp1'):
+    """Aggregate per-seed exp1 results on the fly for a given model.
+
+    Expects files named like: "{model_lower}_size{size}_seed{seed}_results.npz".
+    Returns a dict compatible with aggregate_results.
+    """
+    model_key = model_name.lower()
+    if not os.path.isdir(results_dir):
+        raise FileNotFoundError(f"Results directory not found: {results_dir}")
+
+    file_pattern = re.compile(rf"^{re.escape(model_key)}_size(\d+)_seed(\d+)_results\.npz$")
+
+    size_to_seeds = {}
+    for fname in os.listdir(results_dir):
+        match = file_pattern.match(fname)
+        if not match:
+            continue
+        size = int(match.group(1))
+        seed = int(match.group(2))
+        size_to_seeds.setdefault(size, set()).add(seed)
+
+    if not size_to_seeds:
+        raise FileNotFoundError(
+            f"No per-seed results found for {model_name} in {results_dir}"
+        )
+
+    dataset_sizes = sorted(size_to_seeds.keys())
+    all_seeds_sorted = sorted({s for seeds in size_to_seeds.values() for s in seeds})
+
+    train_accs = []
+    test_accs = []
+    generalization_gaps = []
+    train_losses = []
+    test_losses = []
+    valid_results = []
+
+    for size in dataset_sizes:
+        size_train_accs = []
+        size_test_accs = []
+        size_gen_gaps = []
+        size_train_losses = []
+        size_test_losses = []
+        size_valid = []
+
+        seeds_for_size = sorted(size_to_seeds[size])
+        for seed in seeds_for_size:
+            fpath = os.path.join(
+                results_dir, f"{model_key}_size{size}_seed{seed}_results.npz"
+            )
+            if not os.path.exists(fpath):
+                # skip silently per user request
+                continue
+            data = np.load(fpath, allow_pickle=True)
+            is_valid = bool(data.get('valid', False))
+            if is_valid:
+                size_train_accs.append(float(data['train_acc']))
+                size_test_accs.append(float(data['test_acc']))
+                size_gen_gaps.append(float(data['generalization_gap']))
+                size_train_losses.append(float(data['train_loss']))
+                size_test_losses.append(float(data['test_loss']))
+                size_valid.append(True)
+            else:
+                size_train_accs.append(None)
+                size_test_accs.append(None)
+                size_gen_gaps.append(None)
+                size_train_losses.append(None)
+                size_test_losses.append(None)
+                size_valid.append(False)
+
+        train_accs.append(size_train_accs)
+        test_accs.append(size_test_accs)
+        generalization_gaps.append(size_gen_gaps)
+        train_losses.append(size_train_losses)
+        test_losses.append(size_test_losses)
+        valid_results.append(size_valid)
+
+    return {
+        'model': model_name,
+        'dataset_sizes': dataset_sizes,
+        'seeds': all_seeds_sorted,
+        'train_accs': train_accs,
+        'test_accs': test_accs,
+        'generalization_gaps': generalization_gaps,
+        'train_losses': train_losses,
+        'test_losses': test_losses,
+        'valid_results': valid_results,
+    }
+
+
+def load_exp2_results_from_per_seed(model_name, results_dir='results/exp2'):
+    """Aggregate per-seed exp2 results on the fly for a given model.
+
+    Expects files named like: "{model_lower}_noise{noise:.3f}_seed{seed}_results.npz".
+    Returns a dict with 'noise_levels' and 'mi_values' to match the aggregator expectations.
+    """
+    model_key = model_name.lower()
+    if not os.path.isdir(results_dir):
+        raise FileNotFoundError(f"Results directory not found: {results_dir}")
+
+    file_pattern = re.compile(rf"^{re.escape(model_key)}_noise(\d+\.\d+)_seed(\d+)_results\.npz$")
+
+    noise_to_seeds = {}
+    for fname in os.listdir(results_dir):
+        match = file_pattern.match(fname)
+        if not match:
+            continue
+        noise_str = match.group(1)
+        seed = int(match.group(2))
+        noise_level = float(noise_str)
+        noise_to_seeds.setdefault(noise_level, set()).add(seed)
+
+    if not noise_to_seeds:
+        raise FileNotFoundError(
+            f"No per-seed results found for {model_name} in {results_dir}"
+        )
+
+    noise_levels = sorted(noise_to_seeds.keys())
+    all_seeds_sorted = sorted({s for seeds in noise_to_seeds.values() for s in seeds})
+
+    # Compute MI per noise level (same formula used elsewhere)
+    mi_values = [calculate_mutual_information(n) for n in noise_levels]
+
+    train_accs = []
+    test_accs = []
+    generalization_gaps = []
+    train_losses = []
+    test_losses = []
+    valid_results = []
+
+    for noise in noise_levels:
+        noise_train_accs = []
+        noise_test_accs = []
+        noise_gen_gaps = []
+        noise_train_losses = []
+        noise_test_losses = []
+        noise_valid = []
+
+        seeds_for_noise = sorted(noise_to_seeds[noise])
+        for seed in seeds_for_noise:
+            fpath = os.path.join(
+                results_dir, f"{model_key}_noise{noise:.3f}_seed{seed}_results.npz"
+            )
+            if not os.path.exists(fpath):
+                # skip silently per user request
+                continue
+            data = np.load(fpath, allow_pickle=True)
+            is_valid = bool(data.get('valid', False))
+            if is_valid:
+                noise_train_accs.append(float(data['train_acc']))
+                noise_test_accs.append(float(data['test_acc']))
+                noise_gen_gaps.append(float(data['generalization_gap']))
+                noise_train_losses.append(float(data['train_loss']))
+                noise_test_losses.append(float(data['test_loss']))
+                noise_valid.append(True)
+            else:
+                noise_train_accs.append(None)
+                noise_test_accs.append(None)
+                noise_gen_gaps.append(None)
+                noise_train_losses.append(None)
+                noise_test_losses.append(None)
+                noise_valid.append(False)
+
+        train_accs.append(noise_train_accs)
+        test_accs.append(noise_test_accs)
+        generalization_gaps.append(noise_gen_gaps)
+        train_losses.append(noise_train_losses)
+        test_losses.append(noise_test_losses)
+        valid_results.append(noise_valid)
+
+    return {
+        'model': model_name,
+        'noise_levels': noise_levels,
+        'mi_values': mi_values,
+        'seeds': all_seeds_sorted,
+        'train_accs': train_accs,
+        'test_accs': test_accs,
+        'generalization_gaps': generalization_gaps,
+        'train_losses': train_losses,
+        'test_losses': test_losses,
+        'valid_results': valid_results,
+    }

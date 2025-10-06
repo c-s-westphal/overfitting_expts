@@ -2,7 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from utils.results_utils import load_experiment_results, aggregate_results
+from utils.results_utils import load_experiment_results, aggregate_results, load_exp1_results_from_per_seed, load_exp2_results_from_per_seed
 
 
 def plot_experiment_1():
@@ -13,7 +13,11 @@ def plot_experiment_1():
     
     for model, color in zip(models, colors):
         try:
-            results = load_experiment_results('exp1', model)
+            # Prefer per-seed aggregation; fallback to pre-aggregated file if absent
+            try:
+                results = load_exp1_results_from_per_seed(model, results_dir='results/exp1')
+            except FileNotFoundError:
+                results = load_experiment_results('exp1', model)
             aggregated = aggregate_results(results)
             
             sizes = results['dataset_sizes']
@@ -59,7 +63,11 @@ def plot_experiment_2():
     
     for model, color in zip(models, colors):
         try:
-            results = load_experiment_results('exp2', model)
+            # Prefer per-seed aggregation; fallback to pre-aggregated file if absent
+            try:
+                results = load_exp2_results_from_per_seed(model, results_dir='results/exp2')
+            except FileNotFoundError:
+                results = load_experiment_results('exp2', model)
             aggregated = aggregate_results(results)
             
             mi_values = results['mi_values']

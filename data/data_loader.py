@@ -107,7 +107,8 @@ def get_cifar10_special_pixel_dataloaders(batch_size=128, num_workers=4, noise_l
         root='./data', train=False, download=True, transform=transform_test
     )
     
-    testset = SpecialPixelDataset(base_testset, noise_level=noise_level, seed=seed)
+    # Keep test set clean (no special pixel at test time)
+    testset = base_testset
     
     trainloader = DataLoader(
         trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers
