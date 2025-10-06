@@ -1,3 +1,21 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.so
+
+# OS
+.DS_Store
+
+# Data and logs
+logs/**
+
+# Results - keep out of git
+results/**
+
+# Large datasets
+data/cifar-10-batches-py/**
+data/cifar-10-python.tar.gz
+
 # Large data files
 data/cifar-10-python.tar.gz
 
