@@ -105,44 +105,49 @@ def plot_experiment_2():
 
 
 def plot_experiment_3():
-    models = [('PreActResNet', 'teal'), ('VGG', 'orange')]
+    """Plot Experiment 3: VGG Variable - Generalization Gap vs Number of Layers."""
+    models = [
+        ('VGG11', 'blue'),
+        ('VGG13', 'green'),
+        ('VGG16', 'red'),
+        ('VGG19', 'purple')
+    ]
 
     plt.figure(figsize=(12, 8))
 
     for model, color in models:
         try:
-            # Prefer per-seed aggregation; fallback to pre-aggregated file if absent
-            try:
-                results = load_exp3_results_from_per_seed(model, results_dir='results/exp3')
-            except FileNotFoundError:
-                results = load_experiment_results('exp3', model)
+            # Load per-seed results and aggregate
+            results = load_exp3_results_from_per_seed(model, results_dir='results/exp3')
             aggregated = aggregate_results(results)
 
-            depths = results['depths']
+            # Get n_layers (or depths for backward compatibility)
+            layer_key = 'n_layers' if 'n_layers' in results else 'depths'
+            layers = results[layer_key]
             gaps_mean = aggregated['generalization_gaps_mean']
             gaps_std = aggregated['generalization_gaps_std']
 
-            valid_depths = []
+            valid_layers = []
             valid_gaps_mean = []
             valid_gaps_std = []
 
-            for d, gap_mean, gap_std in zip(depths, gaps_mean, gaps_std):
+            for n, gap_mean, gap_std in zip(layers, gaps_mean, gaps_std):
                 if gap_mean is not None:
-                    valid_depths.append(d)
+                    valid_layers.append(n)
                     valid_gaps_mean.append(gap_mean)
                     valid_gaps_std.append(gap_std)
 
-            if valid_depths:
-                plt.errorbar(valid_depths, valid_gaps_mean, yerr=valid_gaps_std,
-                             label=model, color=color, marker='o', capsize=5)
+            if valid_layers:
+                plt.errorbar(valid_layers, valid_gaps_mean, yerr=valid_gaps_std,
+                             label=model, color=color, marker='o', capsize=5, linewidth=2)
 
         except FileNotFoundError:
             print(f"Results not found for {model} (exp3)")
 
-    plt.xlabel('Depth (Total layers)')
-    plt.ylabel('Generalization Gap (%)')
-    plt.title('Experiment 3: Generalization Gap vs Depth (MI=2.5 bits)')
-    plt.legend()
+    plt.xlabel('Number of Convolutional Layers', fontsize=12)
+    plt.ylabel('Generalization Gap (%)', fontsize=12)
+    plt.title('Experiment 3: Generalization Gap vs Network Depth (MI=2.5 bits)', fontsize=14)
+    plt.legend(fontsize=11)
     plt.grid(True, alpha=0.3)
 
     os.makedirs('plots', exist_ok=True)

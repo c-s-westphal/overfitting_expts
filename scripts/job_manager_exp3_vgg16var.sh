@@ -6,15 +6,15 @@
 #$ -cwd
 #$ -S /bin/bash
 #$ -j y
-#$ -N noise_pixel_fixed_exp3_vgg
-#$ -t 1-18
+#$ -N exp3_vgg16var
+#$ -t 1-30
 set -euo pipefail
 
 hostname
 date
 
 number=$SGE_TASK_ID
-paramfile="scripts/jobs_noise_pixel_fixed_vgg.txt"
+paramfile="scripts/jobs_exp3_vgg16var.txt"
 
 # ---------------------------------------------------------------------
 # 1.  Load toolchains and activate virtual-env
@@ -48,37 +48,31 @@ mkdir -p data
 # ---------------------------------------------------------------------
 # 4.  Extract task-specific parameters
 # ---------------------------------------------------------------------
-# Format per line in jobs_noise_pixel_fixed_vgg.txt:
-#   <depth> <seed>
-depth=$(sed -n ${number}p "$paramfile" | awk '{print $1}')
+# Format per line in jobs_exp3_vgg16var.txt:
+#   <n_layers> <seed>
+n_layers=$(sed -n ${number}p "$paramfile" | awk '{print $1}')
 seed=$(sed -n ${number}p "$paramfile" | awk '{print $2}')
 
-if [[ -z "$depth" || -z "$seed" ]]; then
+if [[ -z "$n_layers" || -z "$seed" ]]; then
   echo "Invalid job line at index $number in $paramfile" >&2
   exit 1
 fi
 
 date
-echo "Running exp3 (fixed MI=2.5 bits, VGG): depth=$depth, seed=$seed"
+echo "Running exp3 VGG16 Variable: n_layers=$n_layers, seed=$seed"
 
 # ---------------------------------------------------------------------
 # 5.  Run single experiment
 # ---------------------------------------------------------------------
 echo "Starting training..."
 python3.9 -u experiments/exp3_single_run.py \
-    --arch vgg \
-    --depth "$depth" \
+    --arch vgg16var \
+    --n_layers "$n_layers" \
     --mi_bits 2.5 \
     --seed "$seed" \
-    --epochs 200 \
     --batch_size 128 \
-    --lr 0.1 \
     --device cuda \
-    --output_dir results/exp3 \
-    --log_dir logs/exp3
+    --output_dir results/exp3
 
 date
-echo "Training completed: depth=$depth seed=$seed"
-
-
-
+echo "Training completed: VGG16 n_layers=$n_layers seed=$seed"

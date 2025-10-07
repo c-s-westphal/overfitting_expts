@@ -69,11 +69,13 @@ def print_summary(experiment_type, model_name):
             if aggregated['generalization_gaps_mean'][i] is not None:
                 print(f"Noise {noise:.3f} (MI={mi:.3f}): Gap = {aggregated['generalization_gaps_mean'][i]:.2f} ± {aggregated['generalization_gaps_std'][i]:.2f} (valid: {valid}/5)")
     elif experiment_type == 'exp3':
-        depths = results['depths']
-        for i, depth in enumerate(depths):
+        # Handle both old 'depths' and new 'n_layers' keys
+        layer_key = 'n_layers' if 'n_layers' in results else 'depths'
+        layers = results[layer_key]
+        for i, layer in enumerate(layers):
             valid = aggregated['valid_counts'][i]
             if aggregated['generalization_gaps_mean'][i] is not None:
-                print(f"Depth {depth:4d}: Gap = {aggregated['generalization_gaps_mean'][i]:.2f} ± {aggregated['generalization_gaps_std'][i]:.2f} (valid: {valid}/3)")
+                print(f"Layers {layer:4d}: Gap = {aggregated['generalization_gaps_mean'][i]:.2f} ± {aggregated['generalization_gaps_std'][i]:.2f} (valid: {valid}/3)")
 
 
 def load_exp1_results_from_per_seed(model_name, results_dir='results/exp1'):
@@ -262,31 +264,35 @@ def load_exp2_results_from_per_seed(model_name, results_dir='results/exp2'):
 def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
     """Aggregate per-seed exp3 results on the fly for a given model.
 
-    Expects files named like: "{model_lower}_depth{depth}_seed{seed}_results.npz".
-    Returns a dict compatible with aggregate_results, including 'depths'.
+    Expects files named like: "vgg{X}var_layers{n}_seed{seed}_results.npz".
+    Returns a dict compatible with aggregate_results, including 'n_layers'.
     """
-    model_key = model_name.lower()
+    # Map model_name to file prefix
+    # model_name should be like 'VGG11', 'VGG13', 'VGG16', 'VGG19'
+    model_num = model_name.replace('VGG', '').lower()
+    file_prefix = f"vgg{model_num}var"
+
     if not os.path.isdir(results_dir):
         raise FileNotFoundError(f"Results directory not found: {results_dir}")
 
-    file_pattern = re.compile(rf"^{re.escape(model_key)}_depth(\d+)_seed(\d+)_results\.npz$")
+    file_pattern = re.compile(rf"^{re.escape(file_prefix)}_layers(\d+)_seed(\d+)_results\.npz$")
 
-    depth_to_seeds = {}
+    layers_to_seeds = {}
     for fname in os.listdir(results_dir):
         match = file_pattern.match(fname)
         if not match:
             continue
-        depth = int(match.group(1))
+        n_layers = int(match.group(1))
         seed = int(match.group(2))
-        depth_to_seeds.setdefault(depth, set()).add(seed)
+        layers_to_seeds.setdefault(n_layers, set()).add(seed)
 
-    if not depth_to_seeds:
+    if not layers_to_seeds:
         raise FileNotFoundError(
             f"No per-seed results found for {model_name} in {results_dir}"
         )
 
-    depths = sorted(depth_to_seeds.keys())
-    all_seeds_sorted = sorted({s for seeds in depth_to_seeds.values() for s in seeds})
+    n_layers_list = sorted(layers_to_seeds.keys())
+    all_seeds_sorted = sorted({s for seeds in layers_to_seeds.values() for s in seeds})
 
     train_accs = []
     test_accs = []
@@ -295,18 +301,18 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
     test_losses = []
     valid_results = []
 
-    for depth in depths:
-        depth_train_accs = []
-        depth_test_accs = []
-        depth_gen_gaps = []
-        depth_train_losses = []
-        depth_test_losses = []
-        depth_valid = []
+    for n_layers in n_layers_list:
+        layers_train_accs = []
+        layers_test_accs = []
+        layers_gen_gaps = []
+        layers_train_losses = []
+        layers_test_losses = []
+        layers_valid = []
 
-        seeds_for_depth = sorted(depth_to_seeds[depth])
-        for seed in seeds_for_depth:
+        seeds_for_layers = sorted(layers_to_seeds[n_layers])
+        for seed in seeds_for_layers:
             fpath = os.path.join(
-                results_dir, f"{model_key}_depth{depth}_seed{seed}_results.npz"
+                results_dir, f"{file_prefix}_layers{n_layers}_seed{seed}_results.npz"
             )
             if not os.path.exists(fpath):
                 # skip silently per user request
@@ -314,30 +320,30 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
             data = np.load(fpath, allow_pickle=True)
             is_valid = bool(data.get('valid', False))
             if is_valid:
-                depth_train_accs.append(float(data['train_acc']))
-                depth_test_accs.append(float(data['test_acc']))
-                depth_gen_gaps.append(float(data['generalization_gap']))
-                depth_train_losses.append(float(data['train_loss']))
-                depth_test_losses.append(float(data['test_loss']))
-                depth_valid.append(True)
+                layers_train_accs.append(float(data['train_acc']))
+                layers_test_accs.append(float(data['test_acc']))
+                layers_gen_gaps.append(float(data['generalization_gap']))
+                layers_train_losses.append(float(data['train_loss']))
+                layers_test_losses.append(float(data['test_loss']))
+                layers_valid.append(True)
             else:
-                depth_train_accs.append(None)
-                depth_test_accs.append(None)
-                depth_gen_gaps.append(None)
-                depth_train_losses.append(None)
-                depth_test_losses.append(None)
-                depth_valid.append(False)
+                layers_train_accs.append(None)
+                layers_test_accs.append(None)
+                layers_gen_gaps.append(None)
+                layers_train_losses.append(None)
+                layers_test_losses.append(None)
+                layers_valid.append(False)
 
-        train_accs.append(depth_train_accs)
-        test_accs.append(depth_test_accs)
-        generalization_gaps.append(depth_gen_gaps)
-        train_losses.append(depth_train_losses)
-        test_losses.append(depth_test_losses)
-        valid_results.append(depth_valid)
+        train_accs.append(layers_train_accs)
+        test_accs.append(layers_test_accs)
+        generalization_gaps.append(layers_gen_gaps)
+        train_losses.append(layers_train_losses)
+        test_losses.append(layers_test_losses)
+        valid_results.append(layers_valid)
 
     return {
         'model': model_name,
-        'depths': depths,
+        'n_layers': n_layers_list,
         'seeds': all_seeds_sorted,
         'train_accs': train_accs,
         'test_accs': test_accs,
