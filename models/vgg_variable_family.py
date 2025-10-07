@@ -68,7 +68,6 @@ class _VGGVariableBase(nn.Module):
             nn.Dropout(0.5),
             nn.Linear(512, 256),
             nn.ReLU(True),
-            nn.Dropout(0.5),
             nn.Linear(256, num_classes)
         )
 
