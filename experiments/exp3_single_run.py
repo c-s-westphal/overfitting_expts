@@ -72,13 +72,24 @@ def evaluate(model, dataloader, criterion, device):
 
 
 def get_lr_for_epoch(epoch):
-    """Get learning rate for given epoch (1-indexed)."""
+    """Get learning rate for given epoch (1-indexed).
+
+    LR schedule: drops at epoch 100, 150, then every 50 epochs thereafter.
+    - Epochs 1-100: 0.1
+    - Epochs 101-150: 0.01
+    - Epochs 151-200: 0.001
+    - Epochs 201-250: 0.0001
+    - Epochs 251-300: 0.00001
+    - And continues dropping by 10x every 50 epochs
+    """
     if epoch <= 100:
         return 0.1
     elif epoch <= 150:
         return 0.01
     else:
-        return 0.001
+        # After epoch 150, drop by 10x every 50 epochs
+        periods_after_150 = (epoch - 151) // 50 + 1
+        return 0.01 * (0.1 ** periods_after_150)
 
 
 def train_model_adaptive(model, trainloader, testloader, device='cuda'):
