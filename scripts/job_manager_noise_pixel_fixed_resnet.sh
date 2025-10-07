@@ -6,7 +6,7 @@
 #$ -cwd
 #$ -S /bin/bash
 #$ -j y
-#$ -N noise_pixel_fixed_exp3
+#$ -N noise_pixel_fixed_exp3_resnet
 #$ -t 1-21
 set -euo pipefail
 
@@ -14,7 +14,7 @@ hostname
 date
 
 number=$SGE_TASK_ID
-paramfile="scripts/jobs_noise_pixel_fixed.txt"
+paramfile="scripts/jobs_noise_pixel_fixed_resnet.txt"
 
 # ---------------------------------------------------------------------
 # 1.  Load toolchains and activate virtual-env
@@ -48,7 +48,7 @@ mkdir -p data
 # ---------------------------------------------------------------------
 # 4.  Extract task-specific parameters
 # ---------------------------------------------------------------------
-# Format per line in jobs_noise_pixel_fixed.txt:
+# Format per line in jobs_noise_pixel_fixed_resnet.txt:
 #   <depth> <seed>
 depth=$(sed -n ${number}p "$paramfile" | awk '{print $1}')
 seed=$(sed -n ${number}p "$paramfile" | awk '{print $2}')
@@ -59,13 +59,14 @@ if [[ -z "$depth" || -z "$seed" ]]; then
 fi
 
 date
-echo "Running exp3 (fixed MI=2.5 bits): depth=$depth, seed=$seed"
+echo "Running exp3 (fixed MI=2.5 bits, ResNet): depth=$depth, seed=$seed"
 
 # ---------------------------------------------------------------------
 # 5.  Run single experiment
 # ---------------------------------------------------------------------
 echo "Starting training..."
 python3.9 -u experiments/exp3_single_run.py \
+    --arch preactresnet \
     --depth "$depth" \
     --mi_bits 2.5 \
     --seed "$seed" \
@@ -78,5 +79,6 @@ python3.9 -u experiments/exp3_single_run.py \
 
 date
 echo "Training completed: depth=$depth seed=$seed"
+
 
 

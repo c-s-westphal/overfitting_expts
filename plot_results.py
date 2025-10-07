@@ -2,7 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from utils.results_utils import load_experiment_results, aggregate_results, load_exp1_results_from_per_seed, load_exp2_results_from_per_seed
+from utils.results_utils import load_experiment_results, aggregate_results, load_exp1_results_from_per_seed, load_exp2_results_from_per_seed, load_exp3_results_from_per_seed
 
 
 def plot_experiment_1():
@@ -49,8 +49,8 @@ def plot_experiment_1():
     plt.xscale('log')
     
     os.makedirs('plots', exist_ok=True)
-    plt.savefig('plots/experiment_1_generalization_gap.png', dpi=300, bbox_inches='tight')
-    plt.close()
+    #plt.savefig('plots/experiment_1_generalization_gap.png', dpi=300, bbox_inches='tight')
+    plt.show()
     
     print("Experiment 1 plot saved to plots/experiment_1_generalization_gap.png")
 
@@ -105,35 +105,39 @@ def plot_experiment_2():
 
 
 def plot_experiment_3():
-    model = 'PreActResNet'
-    color = 'teal'
+    models = [('PreActResNet', 'teal'), ('VGG', 'orange')]
 
     plt.figure(figsize=(12, 8))
 
-    try:
-        results = load_experiment_results('exp3', model)
-        aggregated = aggregate_results(results)
+    for model, color in models:
+        try:
+            # Prefer per-seed aggregation; fallback to pre-aggregated file if absent
+            try:
+                results = load_exp3_results_from_per_seed(model, results_dir='results/exp3')
+            except FileNotFoundError:
+                results = load_experiment_results('exp3', model)
+            aggregated = aggregate_results(results)
 
-        depths = results['depths']
-        gaps_mean = aggregated['generalization_gaps_mean']
-        gaps_std = aggregated['generalization_gaps_std']
+            depths = results['depths']
+            gaps_mean = aggregated['generalization_gaps_mean']
+            gaps_std = aggregated['generalization_gaps_std']
 
-        valid_depths = []
-        valid_gaps_mean = []
-        valid_gaps_std = []
+            valid_depths = []
+            valid_gaps_mean = []
+            valid_gaps_std = []
 
-        for d, gap_mean, gap_std in zip(depths, gaps_mean, gaps_std):
-            if gap_mean is not None:
-                valid_depths.append(d)
-                valid_gaps_mean.append(gap_mean)
-                valid_gaps_std.append(gap_std)
+            for d, gap_mean, gap_std in zip(depths, gaps_mean, gaps_std):
+                if gap_mean is not None:
+                    valid_depths.append(d)
+                    valid_gaps_mean.append(gap_mean)
+                    valid_gaps_std.append(gap_std)
 
-        if valid_depths:
-            plt.errorbar(valid_depths, valid_gaps_mean, yerr=valid_gaps_std,
-                         label=model, color=color, marker='o', capsize=5)
+            if valid_depths:
+                plt.errorbar(valid_depths, valid_gaps_mean, yerr=valid_gaps_std,
+                             label=model, color=color, marker='o', capsize=5)
 
-    except FileNotFoundError:
-        print(f"Results not found for {model} (exp3)")
+        except FileNotFoundError:
+            print(f"Results not found for {model} (exp3)")
 
     plt.xlabel('Depth (Total layers)')
     plt.ylabel('Generalization Gap (%)')

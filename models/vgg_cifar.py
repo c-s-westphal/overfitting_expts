@@ -3,6 +3,8 @@ import torch.nn as nn
 
 
 cfg = {
+    'VGG7': [64, 'M', 128, 'M', 256, 'M', 512],
+    'VGG9': [64, 64, 'M', 128, 128, 'M', 256, 'M', 512],
     'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
@@ -41,12 +43,26 @@ class VGG(nn.Module):
                            nn.BatchNorm2d(x),
                            nn.ReLU(inplace=True)]
                 in_channels = x
-        layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
+        # Force 1x1 spatial size regardless of number of pooling layers so
+        # that the classifier's first Linear layer input dimension stays 512.
+        layers += [nn.AdaptiveAvgPool2d((1, 1))]
         return nn.Sequential(*layers)
+
+
+def VGG7():
+    return VGG('VGG7')
+
+
+def VGG9():
+    return VGG('VGG9')
 
 
 def VGG11():
     return VGG('VGG11')
+
+
+def VGG13():
+    return VGG('VGG13')
 
 
 def VGG16():

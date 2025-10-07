@@ -6,6 +6,7 @@ import argparse
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.preact_resnet_cifar import build_preact_resnet
+from models.vgg_cifar import VGG7, VGG9, VGG11, VGG13, VGG16, VGG19
 from data.data_loader import get_cifar10_special_pixel_dataloaders
 from utils.training import train_model
 
@@ -19,7 +20,8 @@ def noise_for_target_mi(target_mi_bits, num_classes=10):
 
 def main():
     parser = argparse.ArgumentParser(description='Single run for Experiment 3: depth sweep at fixed MI')
-    parser.add_argument('--depth', type=int, required=True, help='Total number of layers (e.g., 20, 32, 44, 56, 80, 110, 218)')
+    parser.add_argument('--arch', type=str, default='preactresnet', choices=['preactresnet', 'vgg'], help='Model architecture')
+    parser.add_argument('--depth', type=int, required=True, help='Depth spec. For PreActResNet: total layers (e.g., 20, 32, 44, 56, 80, 110, 218). For VGG: {7, 9, 11, 13, 16, 19}.')
     parser.add_argument('--mi_bits', type=float, default=2.5, help='Target MI in bits for special pixel (default: 2.5)')
     parser.add_argument('--seed', type=int, required=True, help='Random seed')
     parser.add_argument('--epochs', type=int, default=200, help='Number of epochs')
@@ -37,10 +39,27 @@ def main():
         torch.cuda.manual_seed(args.seed)
 
     noise_level = noise_for_target_mi(args.mi_bits, num_classes=10)
-    print(f"Running: PreActResNet depth={args.depth}, noise={noise_level:.4f} (MI={args.mi_bits} bits), seed={args.seed}")
-
-    # prefer_stable=True selects bottleneck automatically for valid deep depths (>=164, 9n+2)
-    model = build_preact_resnet(args.depth, num_classes=10, prefer_stable=True)
+    if args.arch == 'preactresnet':
+        print(f"Running: PreActResNet depth={args.depth}, noise={noise_level:.4f} (MI={args.mi_bits} bits), seed={args.seed}")
+        # prefer_stable=True selects bottleneck automatically for valid deep depths (>=164, 9n+2)
+        model = build_preact_resnet(args.depth, num_classes=10, prefer_stable=True)
+        model_label = 'PreActResNet'
+        save_prefix = 'preactresnet'
+    else:
+        print(f"Running: VGG depth={args.depth}, noise={noise_level:.4f} (MI={args.mi_bits} bits), seed={args.seed}")
+        vgg_map = {
+            7: VGG7,
+            9: VGG9,
+            11: VGG11,
+            13: VGG13,
+            16: VGG16,
+            19: VGG19,
+        }
+        if args.depth not in vgg_map:
+            raise ValueError(f"Unsupported VGG depth: {args.depth}. Allowed: {sorted(vgg_map.keys())}")
+        model = vgg_map[args.depth]()
+        model_label = 'VGG'
+        save_prefix = 'vgg'
 
     trainloader, testloader = get_cifar10_special_pixel_dataloaders(
         batch_size=args.batch_size,
@@ -60,7 +79,7 @@ def main():
 
     if metrics['final_train_acc'] >= 99.0:
         result = {
-            'model': 'PreActResNet',
+            'model': model_label,
             'depth': args.depth,
             'noise_level': noise_level,
             'mi_bits': args.mi_bits,
@@ -74,14 +93,14 @@ def main():
         }
 
         os.makedirs(args.output_dir, exist_ok=True)
-        save_path = f"{args.output_dir}/preactresnet_depth{args.depth}_seed{args.seed}_results.npz"
+        save_path = f"{args.output_dir}/{save_prefix}_depth{args.depth}_seed{args.seed}_results.npz"
         np.savez(save_path, **result)
         print(f"Results saved to {save_path}")
         print(f"Final train acc: {metrics['final_train_acc']:.2f}%, test acc: {metrics['final_test_acc']:.2f}%")
     else:
-        print(f"Warning: depth {args.depth} achieved only {metrics['final_train_acc']:.2f}% train accuracy")
+        print(f"Warning: {model_label} depth {args.depth} achieved only {metrics['final_train_acc']:.2f}% train accuracy")
         result = {
-            'model': 'PreActResNet',
+            'model': model_label,
             'depth': args.depth,
             'noise_level': noise_level,
             'mi_bits': args.mi_bits,
@@ -89,7 +108,7 @@ def main():
             'valid': False
         }
         os.makedirs(args.output_dir, exist_ok=True)
-        save_path = f"{args.output_dir}/preactresnet_depth{args.depth}_seed{args.seed}_results.npz"
+        save_path = f"{args.output_dir}/{save_prefix}_depth{args.depth}_seed{args.seed}_results.npz"
         np.savez(save_path, **result)
 
 

@@ -257,3 +257,92 @@ def load_exp2_results_from_per_seed(model_name, results_dir='results/exp2'):
         'test_losses': test_losses,
         'valid_results': valid_results,
     }
+
+
+def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
+    """Aggregate per-seed exp3 results on the fly for a given model.
+
+    Expects files named like: "{model_lower}_depth{depth}_seed{seed}_results.npz".
+    Returns a dict compatible with aggregate_results, including 'depths'.
+    """
+    model_key = model_name.lower()
+    if not os.path.isdir(results_dir):
+        raise FileNotFoundError(f"Results directory not found: {results_dir}")
+
+    file_pattern = re.compile(rf"^{re.escape(model_key)}_depth(\d+)_seed(\d+)_results\.npz$")
+
+    depth_to_seeds = {}
+    for fname in os.listdir(results_dir):
+        match = file_pattern.match(fname)
+        if not match:
+            continue
+        depth = int(match.group(1))
+        seed = int(match.group(2))
+        depth_to_seeds.setdefault(depth, set()).add(seed)
+
+    if not depth_to_seeds:
+        raise FileNotFoundError(
+            f"No per-seed results found for {model_name} in {results_dir}"
+        )
+
+    depths = sorted(depth_to_seeds.keys())
+    all_seeds_sorted = sorted({s for seeds in depth_to_seeds.values() for s in seeds})
+
+    train_accs = []
+    test_accs = []
+    generalization_gaps = []
+    train_losses = []
+    test_losses = []
+    valid_results = []
+
+    for depth in depths:
+        depth_train_accs = []
+        depth_test_accs = []
+        depth_gen_gaps = []
+        depth_train_losses = []
+        depth_test_losses = []
+        depth_valid = []
+
+        seeds_for_depth = sorted(depth_to_seeds[depth])
+        for seed in seeds_for_depth:
+            fpath = os.path.join(
+                results_dir, f"{model_key}_depth{depth}_seed{seed}_results.npz"
+            )
+            if not os.path.exists(fpath):
+                # skip silently per user request
+                continue
+            data = np.load(fpath, allow_pickle=True)
+            is_valid = bool(data.get('valid', False))
+            if is_valid:
+                depth_train_accs.append(float(data['train_acc']))
+                depth_test_accs.append(float(data['test_acc']))
+                depth_gen_gaps.append(float(data['generalization_gap']))
+                depth_train_losses.append(float(data['train_loss']))
+                depth_test_losses.append(float(data['test_loss']))
+                depth_valid.append(True)
+            else:
+                depth_train_accs.append(None)
+                depth_test_accs.append(None)
+                depth_gen_gaps.append(None)
+                depth_train_losses.append(None)
+                depth_test_losses.append(None)
+                depth_valid.append(False)
+
+        train_accs.append(depth_train_accs)
+        test_accs.append(depth_test_accs)
+        generalization_gaps.append(depth_gen_gaps)
+        train_losses.append(depth_train_losses)
+        test_losses.append(depth_test_losses)
+        valid_results.append(depth_valid)
+
+    return {
+        'model': model_name,
+        'depths': depths,
+        'seeds': all_seeds_sorted,
+        'train_accs': train_accs,
+        'test_accs': test_accs,
+        'generalization_gaps': generalization_gaps,
+        'train_losses': train_losses,
+        'test_losses': test_losses,
+        'valid_results': valid_results,
+    }
