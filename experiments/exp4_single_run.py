@@ -190,12 +190,12 @@ def main():
     noise_level = 0.0
 
     # Get hidden dims for display
-    hidden_dims_str = " → ".join(map(str, model.hidden_dims))
+    hidden_dims_str = f"{model.hidden_dim} × {args.n_layers}"
 
     print(f"\n{'='*80}")
     print(f"Experiment 4: MLP Variable Depth on MNIST")
     print(f"{'='*80}")
-    print(f"Architecture:     MLP (Halving)")
+    print(f"Architecture:     MLP (Fixed 256 neurons)")
     print(f"Hidden Layers:    {args.n_layers}")
     print(f"Hidden Dims:      {hidden_dims_str}")
     print(f"Total Params:     {model.count_parameters():,}")
@@ -232,7 +232,7 @@ def main():
     result = {
         'model': 'MLP',
         'n_layers': args.n_layers,
-        'hidden_dims': model.hidden_dims,
+        'hidden_dim': model.hidden_dim,
         'noise_level': noise_level,
         'mi_bits': args.mi_bits,
         'seed': args.seed,
