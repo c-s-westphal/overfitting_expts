@@ -27,8 +27,8 @@ class AllConv_Variable(nn.Module):
     def __init__(self, num_classes=10, n_layers=3, num_channels=128):
         super(AllConv_Variable, self).__init__()
 
-        if n_layers < 1 or n_layers > 5:
-            raise ValueError(f"n_layers must be between 1 and 5, got {n_layers}")
+        if n_layers < 1 or n_layers > 15:
+            raise ValueError(f"n_layers must be between 1 and 15, got {n_layers}")
 
         self.n_layers = n_layers
         self.num_channels = num_channels

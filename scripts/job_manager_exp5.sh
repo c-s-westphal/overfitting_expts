@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp5_allconv
-#$ -t 1-15
+#$ -t 1-45
 set -euo pipefail
 
 hostname
@@ -72,7 +72,7 @@ python3.9 -u experiments/exp5_single_run.py \
     --batch_size 128 \
     --device cuda \
     --output_dir results/exp5 \
-    --num_epochs 75
+    --num_epochs 20
 
 date
 echo "Training completed: All-Conv n_layers=$n_layers seed=$seed"
