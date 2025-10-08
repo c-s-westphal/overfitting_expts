@@ -95,26 +95,13 @@ def evaluate(model, dataloader, criterion, device):
 def get_lr_for_epoch(epoch):
     """Get learning rate for given epoch (1-indexed).
 
-    LR schedule: drops at epoch 100, 150, then every 50 epochs thereafter.
-    - Epochs 1-100: 0.1
-    - Epochs 101-150: 0.01
-    - Epochs 151-200: 0.001
-    - Epochs 201-250: 0.0001
-    - Epochs 251-300: 0.00001
-    - And continues dropping by 10x every 50 epochs
+    Fixed learning rate (no scheduling).
     """
-    if epoch <= 100:
-        return 0.1
-    elif epoch <= 150:
-        return 0.01
-    else:
-        # After epoch 150, drop by 10x every 50 epochs
-        periods_after_150 = (epoch - 151) // 50 + 1
-        return 0.01 * (0.1 ** periods_after_150)
+    return 0.001
 
 
 def train_model_adaptive(model, trainloader, testloader, device='cuda',
-                         base_lr=0.1, weight_decay=5e-4, optimizer_type='sgd',
+                         base_lr=0.001, weight_decay=5e-4, optimizer_type='adam',
                          warmup_epochs=0, log_gradients=False, grad_monitor_epochs=10,
                          log_activations=False, act_monitor_epochs=10, monitor_every_n_batches=50,
                          initial_epochs=200, max_epochs=500):
@@ -123,7 +110,7 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
 
     Stops immediately when train_acc >= 99.99%. Tracks epochs_to_100pct.
     If 99.99% is never reached, saves best train_acc and corresponding test_acc.
-    Learning rate schedule based on current epoch: 0.1 (1-100), 0.01 (101-150), 0.001 (151+).
+    Fixed learning rate (no scheduling).
 
     Returns:
         dict: Training metrics including epochs_to_100pct, accuracies, and generalization gap
@@ -132,6 +119,8 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
     criterion = nn.CrossEntropyLoss()
     if optimizer_type == 'sgd':
         optimizer = optim.SGD(model.parameters(), lr=base_lr, momentum=0.9, weight_decay=weight_decay)
+    elif optimizer_type == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=base_lr, weight_decay=weight_decay)
     elif optimizer_type == 'adamw':
         optimizer = optim.AdamW(model.parameters(), lr=base_lr, weight_decay=weight_decay)
     else:
@@ -293,11 +282,11 @@ def main():
                         help='Disable BatchNorm in variable VGG (default: BN enabled)')
     parser.add_argument('--dropout_p', type=float, default=0.0,
                         help='Dropout probability in classifier')
-    parser.add_argument('--optimizer', type=str, default='sgd', choices=['sgd', 'adamw'],
+    parser.add_argument('--optimizer', type=str, default='adam', choices=['sgd', 'adam', 'adamw'],
                         help='Optimizer type')
     parser.add_argument('--weight_decay', type=float, default=5e-4,
                         help='Weight decay')
-    parser.add_argument('--base_lr', type=float, default=0.1,
+    parser.add_argument('--base_lr', type=float, default=0.001,
                         help='Base learning rate')
     parser.add_argument('--warmup_epochs', type=int, default=0,
                         help='Number of LR warmup epochs')
