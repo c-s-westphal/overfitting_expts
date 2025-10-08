@@ -22,13 +22,13 @@ def load_experiment_results(experiment_type, model_name):
 
 def aggregate_results(results_dict):
     aggregated = {}
-    
-    for key in ['train_accs', 'test_accs', 'generalization_gaps', 'train_losses', 'test_losses']:
+
+    for key in ['train_accs', 'test_accs', 'generalization_gaps', 'train_losses', 'test_losses', 'epochs_to_100pct']:
         if key in results_dict:
             data = results_dict[key]
             means = []
             stds = []
-            
+
             for size_results in data:
                 valid_results = [r for r in size_results if r is not None]
                 if valid_results:
@@ -37,14 +37,14 @@ def aggregate_results(results_dict):
                 else:
                     means.append(None)
                     stds.append(None)
-            
+
             aggregated[f'{key}_mean'] = means
             aggregated[f'{key}_std'] = stds
-    
+
     aggregated['valid_counts'] = []
     for valid_list in results_dict['valid_results']:
         aggregated['valid_counts'].append(sum(valid_list))
-    
+
     return aggregated
 
 
@@ -299,6 +299,7 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
     generalization_gaps = []
     train_losses = []
     test_losses = []
+    epochs_to_100pct = []
     valid_results = []
 
     for n_layers in n_layers_list:
@@ -307,6 +308,7 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
         layers_gen_gaps = []
         layers_train_losses = []
         layers_test_losses = []
+        layers_epochs_to_100pct = []
         layers_valid = []
 
         seeds_for_layers = sorted(layers_to_seeds[n_layers])
@@ -325,6 +327,7 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
                 layers_gen_gaps.append(float(data['generalization_gap']))
                 layers_train_losses.append(float(data['train_loss']))
                 layers_test_losses.append(float(data['test_loss']))
+                layers_epochs_to_100pct.append(int(data['epochs_to_100pct']))
                 layers_valid.append(True)
             else:
                 layers_train_accs.append(None)
@@ -332,6 +335,7 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
                 layers_gen_gaps.append(None)
                 layers_train_losses.append(None)
                 layers_test_losses.append(None)
+                layers_epochs_to_100pct.append(None)
                 layers_valid.append(False)
 
         train_accs.append(layers_train_accs)
@@ -339,6 +343,7 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
         generalization_gaps.append(layers_gen_gaps)
         train_losses.append(layers_train_losses)
         test_losses.append(layers_test_losses)
+        epochs_to_100pct.append(layers_epochs_to_100pct)
         valid_results.append(layers_valid)
 
     return {
@@ -350,6 +355,7 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
         'generalization_gaps': generalization_gaps,
         'train_losses': train_losses,
         'test_losses': test_losses,
+        'epochs_to_100pct': epochs_to_100pct,
         'valid_results': valid_results,
     }
 
@@ -429,6 +435,92 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
 
     return {
         'model': 'MLP',
+        'n_layers': n_layers_list,
+        'seeds': all_seeds_sorted,
+        'train_accs': train_accs,
+        'test_accs': test_accs,
+        'generalization_gaps': generalization_gaps,
+        'train_losses': train_losses,
+        'test_losses': test_losses,
+        'valid_results': valid_results,
+    }
+
+
+def load_exp5_results_from_per_seed(results_dir='results/exp5'):
+    """
+    Load exp5 (All-Conv Variable) results from per-seed .npz files.
+    Expects files named like: "allconv_layers{n}_seed{seed}_results.npz".
+    Returns a dict compatible with aggregate_results, including 'n_layers'.
+    """
+    if not os.path.isdir(results_dir):
+        raise FileNotFoundError(f"Results directory not found: {results_dir}")
+
+    file_pattern = re.compile(r"^allconv_layers(\d+)_seed(\d+)_results\.npz$")
+
+    layers_to_seeds = {}
+    for fname in os.listdir(results_dir):
+        match = file_pattern.match(fname)
+        if not match:
+            continue
+        n_layers = int(match.group(1))
+        seed = int(match.group(2))
+        layers_to_seeds.setdefault(n_layers, set()).add(seed)
+
+    if not layers_to_seeds:
+        raise FileNotFoundError(
+            f"No per-seed results found for All-Conv in {results_dir}"
+        )
+
+    n_layers_list = sorted(layers_to_seeds.keys())
+    all_seeds_sorted = sorted({s for seeds in layers_to_seeds.values() for s in seeds})
+
+    train_accs = []
+    test_accs = []
+    generalization_gaps = []
+    train_losses = []
+    test_losses = []
+    valid_results = []
+
+    for n_layers in n_layers_list:
+        layers_train_accs = []
+        layers_test_accs = []
+        layers_gen_gaps = []
+        layers_train_losses = []
+        layers_test_losses = []
+        layers_valid = []
+
+        seeds_for_layers = sorted(layers_to_seeds[n_layers])
+        for seed in seeds_for_layers:
+            fpath = os.path.join(
+                results_dir, f"allconv_layers{n_layers}_seed{seed}_results.npz"
+            )
+            if not os.path.exists(fpath):
+                continue
+            data = np.load(fpath, allow_pickle=True)
+
+            # Skip files that don't have train_acc (old format)
+            if 'train_acc' not in data.keys():
+                continue
+
+            is_valid = bool(data.get('valid', False))
+
+            # Always append the values (even if not valid, since we changed the code to save them)
+            layers_train_accs.append(float(data['train_acc']))
+            layers_test_accs.append(float(data['test_acc']))
+            layers_gen_gaps.append(float(data['generalization_gap']))
+            layers_train_losses.append(float(data['train_loss']))
+            layers_test_losses.append(float(data['test_loss']))
+            layers_valid.append(is_valid)
+
+        train_accs.append(layers_train_accs)
+        test_accs.append(layers_test_accs)
+        generalization_gaps.append(layers_gen_gaps)
+        train_losses.append(layers_train_losses)
+        test_losses.append(layers_test_losses)
+        valid_results.append(layers_valid)
+
+    return {
+        'model': 'AllConv',
         'n_layers': n_layers_list,
         'seeds': all_seeds_sorted,
         'train_accs': train_accs,

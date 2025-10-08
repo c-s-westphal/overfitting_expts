@@ -119,13 +119,14 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
                          log_activations=False, act_monitor_epochs=10, monitor_every_n_batches=50,
                          initial_epochs=200, max_epochs=500):
     """
-    Train model with adaptive duration (200-500 epochs).
+    Train model until it reaches 99.99% train accuracy or max_epochs.
 
-    Trains for 200 epochs initially. If train_acc < 99%, extends to 500 epochs.
+    Stops immediately when train_acc >= 99.99%. Tracks epochs_to_100pct.
+    If 99.99% is never reached, saves best train_acc and corresponding test_acc.
     Learning rate schedule based on current epoch: 0.1 (1-100), 0.01 (101-150), 0.001 (151+).
 
     Returns:
-        dict: Training metrics including final accuracies and generalization gap
+        dict: Training metrics including epochs_to_100pct, accuracies, and generalization gap
     """
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
@@ -141,9 +142,12 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
     test_losses = []
     test_accs = []
 
-    # Initial training
-    print(f"\nTraining for {initial_epochs} epochs...")
-    pbar = tqdm(range(1, initial_epochs + 1), desc="Training")
+    epochs_to_100pct = -1
+    best_train_acc = 0.0
+    best_train_acc_epoch = -1
+
+    print(f"\nTraining until 99.99% train accuracy or {max_epochs} epochs...")
+    pbar = tqdm(range(1, max_epochs + 1), desc="Training")
 
     # Optional activation monitoring via forward hooks
     hooks = []
@@ -193,6 +197,11 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
         test_losses.append(test_loss)
         test_accs.append(test_acc)
 
+        # Track best train accuracy
+        if train_acc > best_train_acc:
+            best_train_acc = train_acc
+            best_train_acc_epoch = epoch - 1  # 0-indexed for list access
+
         pbar.set_postfix({
             'Epoch': epoch,
             'LR': current_lr,
@@ -202,7 +211,7 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
 
         # Print progress every 10 epochs
         if epoch % 10 == 0:
-            print(f"\nEpoch {epoch}/{initial_epochs} | LR: {current_lr} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
+            print(f"\nEpoch {epoch}/{max_epochs} | LR: {current_lr} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
 
         # Print activation stats for early epochs
         if log_activations and epoch <= act_monitor_epochs:
@@ -216,65 +225,25 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
                 sv = np.mean([r[2] for r in records])
                 print(f"  - {name}: zero_frac={zf:.3f}, mean={mv:.4f}, std={sv:.4f}")
 
-    # Check if we need to extend training
-    final_train_acc = train_accs[-1]
-    if final_train_acc < 99.0:
-        print(f"\nTrain accuracy {final_train_acc:.2f}% < 99%. Extending to {max_epochs} epochs...")
-        pbar = tqdm(range(initial_epochs + 1, max_epochs + 1), desc="Extended Training")
+        # Check if we've reached 99.99% train accuracy
+        if train_acc >= 99.99:
+            epochs_to_100pct = epoch
+            print(f"\nReached 99.99% train accuracy at epoch {epoch}. Stopping training.")
+            break
 
-        for epoch in pbar:
-            # Update learning rate based on current epoch with optional warmup
-            scheduled_lr = get_lr_for_epoch(epoch)
-            warmup_factor = 1.0
-            if warmup_epochs > 0 and epoch <= warmup_epochs:
-                warmup_factor = float(epoch) / float(max(1, warmup_epochs))
-            current_lr = scheduled_lr * warmup_factor
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = current_lr
-
-            if log_activations and epoch <= act_monitor_epochs:
-                activation_stats.clear()
-
-            train_loss, train_acc = train_epoch(
-                model, trainloader, criterion, optimizer, device,
-                log_gradients=log_gradients, grad_monitor_epochs=grad_monitor_epochs,
-                epoch_index=epoch, monitor_every_n_batches=monitor_every_n_batches
-            )
-            test_loss, test_acc = evaluate(model, testloader, criterion, device)
-
-            train_losses.append(train_loss)
-            train_accs.append(train_acc)
-            test_losses.append(test_loss)
-            test_accs.append(test_acc)
-
-            pbar.set_postfix({
-                'Epoch': epoch,
-                'LR': current_lr,
-                'Train Acc': f'{train_acc:.2f}%',
-                'Test Acc': f'{test_acc:.2f}%'
-            })
-
-            # Print progress every 10 epochs
-            if epoch % 10 == 0:
-                print(f"\nEpoch {epoch}/{max_epochs} | LR: {current_lr} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
-
-            if log_activations and epoch <= act_monitor_epochs:
-                print(f"[ActMon] epoch={epoch} stats for ReLU activations (zero_frac, mean, std)")
-                for name, records in activation_stats.items():
-                    if not records:
-                        continue
-                    zf = np.mean([r[0] for r in records])
-                    mv = np.mean([r[1] for r in records])
-                    sv = np.mean([r[2] for r in records])
-                    print(f"  - {name}: zero_frac={zf:.3f}, mean={mv:.4f}, std={sv:.4f}")
-
-            # Early stop if we reach 99% during extended training
-            if train_acc >= 99.0:
-                print(f"\nReached 99% train accuracy at epoch {epoch}. Stopping training.")
-                break
-
-    final_train_acc = train_accs[-1]
-    final_test_acc = test_accs[-1]
+    # Determine final metrics
+    if epochs_to_100pct != -1:
+        # We reached 99.99%, use final epoch metrics
+        final_train_acc = train_accs[-1]
+        final_test_acc = test_accs[-1]
+        final_train_loss = train_losses[-1]
+        final_test_loss = test_losses[-1]
+    else:
+        # Never reached 99.99%, use best train_acc epoch
+        final_train_acc = train_accs[best_train_acc_epoch]
+        final_test_acc = test_accs[best_train_acc_epoch]
+        final_train_loss = train_losses[best_train_acc_epoch]
+        final_test_loss = test_losses[best_train_acc_epoch]
 
     # Remove hooks
     for h in hooks:
@@ -285,12 +254,13 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
         'train_accs': train_accs,
         'test_losses': test_losses,
         'test_accs': test_accs,
-        'final_train_loss': train_losses[-1],
+        'final_train_loss': final_train_loss,
         'final_train_acc': final_train_acc,
-        'final_test_loss': test_losses[-1],
+        'final_test_loss': final_test_loss,
         'final_test_acc': final_test_acc,
         'generalization_gap': final_train_acc - final_test_acc,
-        'total_epochs': len(train_accs)
+        'total_epochs': len(train_accs),
+        'epochs_to_100pct': epochs_to_100pct
     }
 
 
@@ -401,7 +371,7 @@ def main():
     )
 
     # Prepare results
-    is_valid = metrics['final_train_acc'] >= 99.0
+    is_valid = metrics['final_train_acc'] >= 99.99
 
     result = {
         'model': model_name,
@@ -410,32 +380,32 @@ def main():
         'mi_bits': args.mi_bits,
         'seed': args.seed,
         'valid': is_valid,
+        'epochs_to_100pct': metrics['epochs_to_100pct'],
+        'train_acc': metrics['final_train_acc'],
+        'test_acc': metrics['final_test_acc'],
+        'generalization_gap': metrics['generalization_gap'],
+        'train_loss': metrics['final_train_loss'],
+        'test_loss': metrics['final_test_loss'],
         'total_epochs': metrics['total_epochs']
     }
 
     if is_valid:
-        result.update({
-            'train_acc': metrics['final_train_acc'],
-            'test_acc': metrics['final_test_acc'],
-            'generalization_gap': metrics['generalization_gap'],
-            'train_loss': metrics['final_train_loss'],
-            'test_loss': metrics['final_test_loss'],
-        })
-
         print(f"\n{'='*80}")
-        print(f"Training Complete (Valid)")
+        print(f"Training Complete (Valid - Reached 99.99%)")
         print(f"{'='*80}")
-        print(f"Total Epochs:     {metrics['total_epochs']}")
+        print(f"Epochs to 100%:   {metrics['epochs_to_100pct']}")
         print(f"Train Accuracy:   {metrics['final_train_acc']:.2f}%")
         print(f"Test Accuracy:    {metrics['final_test_acc']:.2f}%")
         print(f"Gen. Gap:         {metrics['generalization_gap']:.2f}%")
         print(f"{'='*80}\n")
     else:
         print(f"\n{'='*80}")
-        print(f"Training Complete (Invalid - Train Acc < 99%)")
+        print(f"Training Complete (Invalid - Did Not Reach 99.99%)")
         print(f"{'='*80}")
         print(f"Total Epochs:     {metrics['total_epochs']}")
-        print(f"Train Accuracy:   {metrics['final_train_acc']:.2f}%")
+        print(f"Best Train Acc:   {metrics['final_train_acc']:.2f}%")
+        print(f"Test Acc at Best: {metrics['final_test_acc']:.2f}%")
+        print(f"Gen. Gap:         {metrics['generalization_gap']:.2f}%")
         print(f"{'='*80}\n")
 
     # Save results
