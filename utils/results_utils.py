@@ -327,7 +327,14 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
                 layers_gen_gaps.append(float(data['generalization_gap']))
                 layers_train_losses.append(float(data['train_loss']))
                 layers_test_losses.append(float(data['test_loss']))
-                layers_epochs_to_100pct.append(int(data['epochs_to_100pct']))
+
+                # Load epochs_to_100pct if available
+                if 'epochs_to_100pct' in data:
+                    epochs_val = int(data['epochs_to_100pct'])
+                    layers_epochs_to_100pct.append(epochs_val if epochs_val != -1 else None)
+                else:
+                    layers_epochs_to_100pct.append(None)
+
                 layers_valid.append(True)
             else:
                 layers_train_accs.append(None)
