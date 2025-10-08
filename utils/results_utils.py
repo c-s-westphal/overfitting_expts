@@ -352,3 +352,84 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
         'test_losses': test_losses,
         'valid_results': valid_results,
     }
+
+
+def load_exp4_results_from_per_seed(results_dir='results/exp4'):
+    """Aggregate per-seed exp4 results on the fly for MLP Variable.
+
+    Expects files named like: "mlp_layers{n}_seed{seed}_results.npz".
+    Returns a dict compatible with aggregate_results, including 'n_layers'.
+    """
+    if not os.path.isdir(results_dir):
+        raise FileNotFoundError(f"Results directory not found: {results_dir}")
+
+    file_pattern = re.compile(r"^mlp_layers(\d+)_seed(\d+)_results\.npz$")
+
+    layers_to_seeds = {}
+    for fname in os.listdir(results_dir):
+        match = file_pattern.match(fname)
+        if not match:
+            continue
+        n_layers = int(match.group(1))
+        seed = int(match.group(2))
+        layers_to_seeds.setdefault(n_layers, set()).add(seed)
+
+    if not layers_to_seeds:
+        raise FileNotFoundError(
+            f"No per-seed results found for MLP in {results_dir}"
+        )
+
+    n_layers_list = sorted(layers_to_seeds.keys())
+    all_seeds_sorted = sorted({s for seeds in layers_to_seeds.values() for s in seeds})
+
+    train_accs = []
+    test_accs = []
+    generalization_gaps = []
+    train_losses = []
+    test_losses = []
+    valid_results = []
+
+    for n_layers in n_layers_list:
+        layers_train_accs = []
+        layers_test_accs = []
+        layers_gen_gaps = []
+        layers_train_losses = []
+        layers_test_losses = []
+        layers_valid = []
+
+        seeds_for_layers = sorted(layers_to_seeds[n_layers])
+        for seed in seeds_for_layers:
+            fpath = os.path.join(
+                results_dir, f"mlp_layers{n_layers}_seed{seed}_results.npz"
+            )
+            if not os.path.exists(fpath):
+                continue
+            data = np.load(fpath, allow_pickle=True)
+            is_valid = bool(data.get('valid', False))
+
+            # Always append the values (even if not valid, since we changed the code to save them)
+            layers_train_accs.append(float(data['train_acc']))
+            layers_test_accs.append(float(data['test_acc']))
+            layers_gen_gaps.append(float(data['generalization_gap']))
+            layers_train_losses.append(float(data['train_loss']))
+            layers_test_losses.append(float(data['test_loss']))
+            layers_valid.append(is_valid)
+
+        train_accs.append(layers_train_accs)
+        test_accs.append(layers_test_accs)
+        generalization_gaps.append(layers_gen_gaps)
+        train_losses.append(layers_train_losses)
+        test_losses.append(layers_test_losses)
+        valid_results.append(layers_valid)
+
+    return {
+        'model': 'MLP',
+        'n_layers': n_layers_list,
+        'seeds': all_seeds_sorted,
+        'train_accs': train_accs,
+        'test_accs': test_accs,
+        'generalization_gaps': generalization_gaps,
+        'train_losses': train_losses,
+        'test_losses': test_losses,
+        'valid_results': valid_results,
+    }

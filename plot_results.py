@@ -2,7 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from utils.results_utils import load_experiment_results, aggregate_results, load_exp1_results_from_per_seed, load_exp2_results_from_per_seed, load_exp3_results_from_per_seed
+from utils.results_utils import load_experiment_results, aggregate_results, load_exp1_results_from_per_seed, load_exp2_results_from_per_seed, load_exp3_results_from_per_seed, load_exp4_results_from_per_seed
 
 
 def plot_experiment_1():
@@ -156,11 +156,56 @@ def plot_experiment_3():
 
     print("Experiment 3 plot saved to plots/experiment_3_gap_vs_depth.png")
 
+
+def plot_experiment_4():
+    """Plot Experiment 4: MLP Variable - Generalization Gap vs Number of Layers."""
+    plt.figure(figsize=(12, 8))
+
+    try:
+        # Load per-seed results and aggregate
+        results = load_exp4_results_from_per_seed(results_dir='results/exp4')
+        aggregated = aggregate_results(results)
+
+        layers = results['n_layers']
+        gaps_mean = aggregated['generalization_gaps_mean']
+        gaps_std = aggregated['generalization_gaps_std']
+
+        valid_layers = []
+        valid_gaps_mean = []
+        valid_gaps_std = []
+
+        for n, gap_mean, gap_std in zip(layers, gaps_mean, gaps_std):
+            if gap_mean is not None:
+                valid_layers.append(n)
+                valid_gaps_mean.append(gap_mean)
+                valid_gaps_std.append(gap_std)
+
+        if valid_layers:
+            plt.errorbar(valid_layers, valid_gaps_mean, yerr=valid_gaps_std,
+                         label='MLP (256 neurons/layer)', color='blue', marker='o', capsize=5, linewidth=2)
+
+    except FileNotFoundError:
+        print(f"Results not found for MLP (exp4)")
+
+    plt.xlabel('Number of Hidden Layers', fontsize=12)
+    plt.ylabel('Generalization Gap (%)', fontsize=12)
+    plt.title('Experiment 4: MLP Generalization Gap vs Network Depth (MI=2.5 bits)', fontsize=14)
+    plt.legend(fontsize=11)
+    plt.grid(True, alpha=0.3)
+
+    os.makedirs('plots', exist_ok=True)
+    plt.savefig('plots/experiment_4_mlp_gap_vs_depth.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print("Experiment 4 plot saved to plots/experiment_4_mlp_gap_vs_depth.png")
+
+
 def main():
     print("Generating plots...")
     plot_experiment_1()
     plot_experiment_2()
     plot_experiment_3()
+    plot_experiment_4()
     print("All plots generated successfully!")
 
 
