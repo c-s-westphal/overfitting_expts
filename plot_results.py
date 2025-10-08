@@ -129,36 +129,30 @@ def plot_experiment_3():
             epochs_mean = aggregated.get('epochs_to_100pct_mean', [None] * len(layers))
             epochs_std = aggregated.get('epochs_to_100pct_std', [None] * len(layers))
 
-            # Collect valid data for generalization gap
-            valid_layers_gap = []
+            # Collect valid data - only include points where epochs_to_100pct is available
+            valid_layers = []
             valid_gaps_mean = []
             valid_gaps_std = []
-
-            for n, gap_mean, gap_std in zip(layers, gaps_mean, gaps_std):
-                if gap_mean is not None:
-                    valid_layers_gap.append(n)
-                    valid_gaps_mean.append(gap_mean)
-                    valid_gaps_std.append(gap_std)
-
-            # Collect valid data for epochs to 100%
-            valid_layers_epochs = []
             valid_epochs_mean = []
             valid_epochs_std = []
 
-            for n, epoch_mean, epoch_std in zip(layers, epochs_mean, epochs_std):
-                if epoch_mean is not None:
-                    valid_layers_epochs.append(n)
+            for n, gap_mean, gap_std, epoch_mean, epoch_std in zip(layers, gaps_mean, gaps_std, epochs_mean, epochs_std):
+                # Only include data where epochs_to_100pct is available
+                if gap_mean is not None and epoch_mean is not None:
+                    valid_layers.append(n)
+                    valid_gaps_mean.append(gap_mean)
+                    valid_gaps_std.append(gap_std)
                     valid_epochs_mean.append(epoch_mean)
                     valid_epochs_std.append(epoch_std)
 
             # Plot generalization gap
-            if valid_layers_gap:
-                ax1.errorbar(valid_layers_gap, valid_gaps_mean, yerr=valid_gaps_std,
+            if valid_layers:
+                ax1.errorbar(valid_layers, valid_gaps_mean, yerr=valid_gaps_std,
                              label=model, color=color, marker='o', capsize=5, linewidth=2)
 
             # Plot epochs to 100%
-            if valid_layers_epochs:
-                ax2.errorbar(valid_layers_epochs, valid_epochs_mean, yerr=valid_epochs_std,
+            if valid_layers:
+                ax2.errorbar(valid_layers, valid_epochs_mean, yerr=valid_epochs_std,
                              label=model, color=color, marker='o', capsize=5, linewidth=2)
 
         except FileNotFoundError:
@@ -203,36 +197,30 @@ def plot_experiment_4():
         epochs_mean = aggregated.get('epochs_to_99pct_mean', [None] * len(layers))
         epochs_std = aggregated.get('epochs_to_99pct_std', [None] * len(layers))
 
-        # Collect valid data for generalization gap
-        valid_layers_gap = []
+        # Collect valid data - only include points where epochs_to_99pct is available
+        valid_layers = []
         valid_gaps_mean = []
         valid_gaps_std = []
-
-        for n, gap_mean, gap_std in zip(layers, gaps_mean, gaps_std):
-            if gap_mean is not None and n >= 2:
-                valid_layers_gap.append(n)
-                valid_gaps_mean.append(gap_mean)
-                valid_gaps_std.append(gap_std)
-
-        # Collect valid data for epochs to 99%
-        valid_layers_epochs = []
         valid_epochs_mean = []
         valid_epochs_std = []
 
-        for n, epoch_mean, epoch_std in zip(layers, epochs_mean, epochs_std):
-            if epoch_mean is not None and n >= 2:
-                valid_layers_epochs.append(n)
+        for n, gap_mean, gap_std, epoch_mean, epoch_std in zip(layers, gaps_mean, gaps_std, epochs_mean, epochs_std):
+            # Only include data where epochs_to_99pct is available and n >= 2
+            if gap_mean is not None and epoch_mean is not None and n >= 2:
+                valid_layers.append(n)
+                valid_gaps_mean.append(gap_mean)
+                valid_gaps_std.append(gap_std)
                 valid_epochs_mean.append(epoch_mean)
                 valid_epochs_std.append(epoch_std)
 
         # Plot generalization gap
-        if valid_layers_gap:
-            ax1.errorbar(valid_layers_gap, valid_gaps_mean, yerr=valid_gaps_std,
+        if valid_layers:
+            ax1.errorbar(valid_layers, valid_gaps_mean, yerr=valid_gaps_std,
                          label='MLP (256 neurons/layer)', color='blue', marker='o', capsize=5, linewidth=2)
 
         # Plot epochs to 99%
-        if valid_layers_epochs:
-            ax2.errorbar(valid_layers_epochs, valid_epochs_mean, yerr=valid_epochs_std,
+        if valid_layers:
+            ax2.errorbar(valid_layers, valid_epochs_mean, yerr=valid_epochs_std,
                          label='MLP (256 neurons/layer)', color='blue', marker='o', capsize=5, linewidth=2)
 
     except FileNotFoundError:
