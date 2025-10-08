@@ -319,8 +319,8 @@ def main():
                         help='Column for special pixel (0-31)')
     parser.add_argument('--no_augment', action='store_true',
                         help='Disable train-time augmentation')
-    parser.add_argument('--with_bn', action='store_true',
-                        help='Enable BatchNorm in variable VGG')
+    parser.add_argument('--no_bn', action='store_true',
+                        help='Disable BatchNorm in variable VGG (default: BN enabled)')
     parser.add_argument('--dropout_p', type=float, default=0.5,
                         help='Dropout probability in classifier')
     parser.add_argument('--optimizer', type=str, default='sgd', choices=['sgd', 'adamw'],
@@ -363,7 +363,7 @@ def main():
     }
 
     model_name, model_fn = arch_map[args.arch]
-    model = model_fn(num_classes=10, n_layers=args.n_layers, with_bn=args.with_bn, dropout_p=args.dropout_p)
+    model = model_fn(num_classes=10, n_layers=args.n_layers, with_bn=(not args.no_bn), dropout_p=args.dropout_p)
 
     # Calculate noise level from target MI
     noise_level = noise_for_target_mi(args.mi_bits, num_classes=10)

@@ -152,7 +152,7 @@ class _VGGVariableBase(nn.Module):
 
 
 # Factory functions for each VGG variant
-def VGG11_Variable(num_classes=10, n_layers=8, with_bn=False, dropout_p=0.5):
+def VGG11_Variable(num_classes=10, n_layers=8, with_bn=True, dropout_p=0.5):
     """VGG11 Variable: 4-8 convolutional layers with unified classifier."""
     return _VGGVariableBase(
         num_classes=num_classes,
@@ -165,7 +165,7 @@ def VGG11_Variable(num_classes=10, n_layers=8, with_bn=False, dropout_p=0.5):
     )
 
 
-def VGG13_Variable(num_classes=10, n_layers=10, with_bn=False, dropout_p=0.5):
+def VGG13_Variable(num_classes=10, n_layers=10, with_bn=True, dropout_p=0.5):
     """VGG13 Variable: 4-10 convolutional layers with unified classifier."""
     return _VGGVariableBase(
         num_classes=num_classes,
@@ -178,7 +178,7 @@ def VGG13_Variable(num_classes=10, n_layers=10, with_bn=False, dropout_p=0.5):
     )
 
 
-def VGG16_Variable(num_classes=10, n_layers=13, with_bn=False, dropout_p=0.5):
+def VGG16_Variable(num_classes=10, n_layers=13, with_bn=True, dropout_p=0.5):
     """VGG16 Variable: 4-13 convolutional layers with unified classifier."""
     return _VGGVariableBase(
         num_classes=num_classes,
@@ -191,7 +191,7 @@ def VGG16_Variable(num_classes=10, n_layers=13, with_bn=False, dropout_p=0.5):
     )
 
 
-def VGG19_Variable(num_classes=10, n_layers=16, with_bn=False, dropout_p=0.5):
+def VGG19_Variable(num_classes=10, n_layers=16, with_bn=True, dropout_p=0.5):
     """VGG19 Variable: 4-16 convolutional layers with unified classifier."""
     return _VGGVariableBase(
         num_classes=num_classes,
