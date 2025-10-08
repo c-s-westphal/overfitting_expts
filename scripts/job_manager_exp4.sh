@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp4_mlp
-#$ -t 1-24
+#$ -t 1-45
 set -euo pipefail
 
 hostname
@@ -72,7 +72,7 @@ python3.9 -u experiments/exp4_single_run.py \
     --batch_size 128 \
     --device cuda \
     --output_dir results/exp4 \
-    --max_epochs 200
+    --max_epochs 5
 
 date
 echo "Training completed: MLP n_layers=$n_layers seed=$seed"
