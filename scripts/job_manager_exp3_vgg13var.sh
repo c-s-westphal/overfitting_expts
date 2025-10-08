@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp3_vgg13var
-#$ -t 1-21
+#$ -t 1-35
 set -euo pipefail
 
 hostname
