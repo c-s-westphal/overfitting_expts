@@ -62,12 +62,15 @@ class _VGGVariableBase(nn.Module):
         # Adaptive pooling to 1x1 spatial size
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
-        # UNIFIED CLASSIFIER (same structure for all depths/architectures)
+        # ADAPTIVE CLASSIFIER: Always expand by 2× to ensure gradient flow
+        # For 256-ch: 256→512→256→10 (unchanged)
+        # For 512-ch: 512→1024→256→10 (fixes bottleneck)
+        hidden_dim = max(512, last_channels * 2)
         self.classifier = nn.Sequential(
-            nn.Linear(last_channels, 512),
+            nn.Linear(last_channels, hidden_dim),
             nn.ReLU(True),
             nn.Dropout(0.5),
-            nn.Linear(512, 256),
+            nn.Linear(hidden_dim, 256),
             nn.ReLU(True),
             nn.Linear(256, num_classes)
         )
