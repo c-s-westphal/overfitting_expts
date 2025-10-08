@@ -137,6 +137,10 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda'):
             'Test Acc': f'{test_acc:.2f}%'
         })
 
+        # Print progress every 10 epochs
+        if epoch % 10 == 0:
+            print(f"\nEpoch {epoch}/{initial_epochs} | LR: {current_lr} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
+
     # Check if we need to extend training
     final_train_acc = train_accs[-1]
     if final_train_acc < 99.0:
@@ -164,6 +168,10 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda'):
                 'Train Acc': f'{train_acc:.2f}%',
                 'Test Acc': f'{test_acc:.2f}%'
             })
+
+            # Print progress every 10 epochs
+            if epoch % 10 == 0:
+                print(f"\nEpoch {epoch}/{max_epochs} | LR: {current_lr} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
 
             # Early stop if we reach 99% during extended training
             if train_acc >= 99.0:
