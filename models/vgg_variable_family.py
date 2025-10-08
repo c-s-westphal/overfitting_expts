@@ -41,7 +41,7 @@ class _VGGVariableBase(nn.Module):
         max_layers: Maximum number of conv layers in this architecture
     """
 
-    def __init__(self, num_classes, n_layers, full_cfg, arch_name, max_layers):
+    def __init__(self, num_classes, n_layers, full_cfg, arch_name, max_layers, with_bn=False, dropout_p=0.5):
         super(_VGGVariableBase, self).__init__()
 
         if n_layers < 4:
@@ -52,6 +52,8 @@ class _VGGVariableBase(nn.Module):
         self.arch_name = arch_name
         self.n_layers = n_layers
         self.num_classes = num_classes
+        self.with_bn = with_bn
+        self.dropout_p = dropout_p
 
         # Truncate config to n_layers convolutional layers
         truncated_cfg = self._get_truncated_cfg(full_cfg, n_layers)
@@ -69,11 +71,25 @@ class _VGGVariableBase(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(last_channels, hidden_dim),
             nn.ReLU(True),
-            nn.Dropout(0.5),
+            nn.Dropout(self.dropout_p),
             nn.Linear(hidden_dim, 256),
             nn.ReLU(True),
             nn.Linear(256, num_classes)
         )
+
+        # Weight initialization tailored for ReLU networks
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.Linear):
+                nn.init.kaiming_normal_(module.weight, nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.BatchNorm2d):
+                nn.init.ones_(module.weight)
+                nn.init.zeros_(module.bias)
 
     def _get_truncated_cfg(self, full_cfg, n_layers):
         """
@@ -116,7 +132,11 @@ class _VGGVariableBase(nn.Module):
             if x == 'M':
                 layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
             else:
-                layers.append(nn.Conv2d(in_channels, x, kernel_size=3, padding=1))
+                # Use bias only when BatchNorm is not present
+                conv = nn.Conv2d(in_channels, x, kernel_size=3, padding=1, bias=not self.with_bn)
+                layers.append(conv)
+                if self.with_bn:
+                    layers.append(nn.BatchNorm2d(x))
                 layers.append(nn.ReLU(inplace=True))
                 in_channels = x
                 last_channels = x
@@ -132,45 +152,53 @@ class _VGGVariableBase(nn.Module):
 
 
 # Factory functions for each VGG variant
-def VGG11_Variable(num_classes=10, n_layers=8):
+def VGG11_Variable(num_classes=10, n_layers=8, with_bn=False, dropout_p=0.5):
     """VGG11 Variable: 4-8 convolutional layers with unified classifier."""
     return _VGGVariableBase(
         num_classes=num_classes,
         n_layers=n_layers,
         full_cfg=VGG_CONFIGS['VGG11'],
         arch_name='VGG11',
-        max_layers=VGG_MAX_LAYERS['VGG11']
+        max_layers=VGG_MAX_LAYERS['VGG11'],
+        with_bn=with_bn,
+        dropout_p=dropout_p
     )
 
 
-def VGG13_Variable(num_classes=10, n_layers=10):
+def VGG13_Variable(num_classes=10, n_layers=10, with_bn=False, dropout_p=0.5):
     """VGG13 Variable: 4-10 convolutional layers with unified classifier."""
     return _VGGVariableBase(
         num_classes=num_classes,
         n_layers=n_layers,
         full_cfg=VGG_CONFIGS['VGG13'],
         arch_name='VGG13',
-        max_layers=VGG_MAX_LAYERS['VGG13']
+        max_layers=VGG_MAX_LAYERS['VGG13'],
+        with_bn=with_bn,
+        dropout_p=dropout_p
     )
 
 
-def VGG16_Variable(num_classes=10, n_layers=13):
+def VGG16_Variable(num_classes=10, n_layers=13, with_bn=False, dropout_p=0.5):
     """VGG16 Variable: 4-13 convolutional layers with unified classifier."""
     return _VGGVariableBase(
         num_classes=num_classes,
         n_layers=n_layers,
         full_cfg=VGG_CONFIGS['VGG16'],
         arch_name='VGG16',
-        max_layers=VGG_MAX_LAYERS['VGG16']
+        max_layers=VGG_MAX_LAYERS['VGG16'],
+        with_bn=with_bn,
+        dropout_p=dropout_p
     )
 
 
-def VGG19_Variable(num_classes=10, n_layers=16):
+def VGG19_Variable(num_classes=10, n_layers=16, with_bn=False, dropout_p=0.5):
     """VGG19 Variable: 4-16 convolutional layers with unified classifier."""
     return _VGGVariableBase(
         num_classes=num_classes,
         n_layers=n_layers,
         full_cfg=VGG_CONFIGS['VGG19'],
         arch_name='VGG19',
-        max_layers=VGG_MAX_LAYERS['VGG19']
+        max_layers=VGG_MAX_LAYERS['VGG19'],
+        with_bn=with_bn,
+        dropout_p=dropout_p
     )

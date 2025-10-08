@@ -6,13 +6,19 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 
-def get_cifar10_transforms():
-    transform_train = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ])
+def get_cifar10_transforms(augment=True):
+    if augment:
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+    else:
+        transform_train = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
     
     transform_test = transforms.Compose([
         transforms.ToTensor(),
@@ -84,8 +90,8 @@ class SpecialPixelDataset(torch.utils.data.Dataset):
         pixel_value = label_value + noise
         pixel_value = np.clip(pixel_value, 0, 1)
         
-        denorm_mean = torch.tensor([0.4914, 0.4822, 0.4465]).view(3, 1, 1)
-        denorm_std = torch.tensor([0.2023, 0.1994, 0.2010]).view(3, 1, 1)
+        denorm_mean = torch.tensor([0.4914, 0.4822, 0.4465], dtype=image.dtype, device=image.device).view(3, 1, 1)
+        denorm_std = torch.tensor([0.2023, 0.1994, 0.2010], dtype=image.dtype, device=image.device).view(3, 1, 1)
         
         normalized_value = (pixel_value - denorm_mean) / denorm_std
         
@@ -94,14 +100,15 @@ class SpecialPixelDataset(torch.utils.data.Dataset):
         return image, label
 
 
-def get_cifar10_special_pixel_dataloaders(batch_size=128, num_workers=4, noise_level=0.0, seed=None):
-    transform_train, transform_test = get_cifar10_transforms()
+def get_cifar10_special_pixel_dataloaders(batch_size=128, num_workers=4, noise_level=0.0, seed=None,
+                                          pixel_location=(16, 16), augment=True):
+    transform_train, transform_test = get_cifar10_transforms(augment=augment)
     
     base_trainset = torchvision.datasets.CIFAR10(
         root='./data', train=True, download=True, transform=transform_train
     )
     
-    trainset = SpecialPixelDataset(base_trainset, noise_level=noise_level, seed=seed)
+    trainset = SpecialPixelDataset(base_trainset, pixel_location=pixel_location, noise_level=noise_level, seed=seed)
     
     base_testset = torchvision.datasets.CIFAR10(
         root='./data', train=False, download=True, transform=transform_test
