@@ -175,7 +175,7 @@ def plot_experiment_4():
         valid_gaps_std = []
 
         for n, gap_mean, gap_std in zip(layers, gaps_mean, gaps_std):
-            if gap_mean is not None:
+            if gap_mean is not None and n >= 2:
                 valid_layers.append(n)
                 valid_gaps_mean.append(gap_mean)
                 valid_gaps_std.append(gap_std)

@@ -405,6 +405,11 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
             if not os.path.exists(fpath):
                 continue
             data = np.load(fpath, allow_pickle=True)
+
+            # Skip files that don't have train_acc (old format)
+            if 'train_acc' not in data.keys():
+                continue
+
             is_valid = bool(data.get('valid', False))
 
             # Always append the values (even if not valid, since we changed the code to save them)
