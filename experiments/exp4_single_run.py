@@ -238,18 +238,15 @@ def main():
         'seed': args.seed,
         'valid': is_valid,
         'total_epochs': metrics['total_epochs'],
-        'num_parameters': model.count_parameters()
+        'num_parameters': model.count_parameters(),
+        'train_acc': metrics['final_train_acc'],
+        'test_acc': metrics['final_test_acc'],
+        'generalization_gap': metrics['generalization_gap'],
+        'train_loss': metrics['final_train_loss'],
+        'test_loss': metrics['final_test_loss'],
     }
 
     if is_valid:
-        result.update({
-            'train_acc': metrics['final_train_acc'],
-            'test_acc': metrics['final_test_acc'],
-            'generalization_gap': metrics['generalization_gap'],
-            'train_loss': metrics['final_train_loss'],
-            'test_loss': metrics['final_test_loss'],
-        })
-
         print(f"\n{'='*80}")
         print(f"Training Complete (Valid)")
         print(f"{'='*80}")
@@ -264,6 +261,8 @@ def main():
         print(f"{'='*80}")
         print(f"Total Epochs:     {metrics['total_epochs']}")
         print(f"Train Accuracy:   {metrics['final_train_acc']:.2f}%")
+        print(f"Test Accuracy:    {metrics['final_test_acc']:.2f}%")
+        print(f"Gen. Gap:         {metrics['generalization_gap']:.2f}%")
         print(f"{'='*80}\n")
 
     # Save results
