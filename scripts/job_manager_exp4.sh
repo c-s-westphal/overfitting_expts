@@ -1,13 +1,13 @@
 #!/bin/bash
 #$ -l tmem=16G
-#$ -l h_rt=8:00:00
+#$ -l h_rt=12:00:00
 #$ -l gpu=true
 #$ -R y
 #$ -cwd
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp4_mlp
-#$ -t 1-15
+#$ -t 1-24
 set -euo pipefail
 
 hostname

@@ -72,9 +72,9 @@ def evaluate(model, dataloader, criterion, device):
 
 
 def train_model(model, trainloader, testloader, device='cuda',
-                lr=0.001, weight_decay=1e-4, num_epochs=50):
+                lr=0.001, weight_decay=1e-4, max_epochs=200, target_train_acc=99.85):
     """
-    Train model for fixed number of epochs with Adam optimizer.
+    Train model until reaching target train accuracy or max epochs with Adam optimizer.
 
     Args:
         model: The MLP model to train
@@ -83,7 +83,8 @@ def train_model(model, trainloader, testloader, device='cuda',
         device: Device to train on (cuda or cpu)
         lr: Learning rate for Adam optimizer
         weight_decay: Weight decay (L2 regularization)
-        num_epochs: Number of training epochs
+        max_epochs: Maximum number of training epochs
+        target_train_acc: Target training accuracy to stop (default: 99.85%)
 
     Returns:
         dict: Training metrics including final accuracies and generalization gap
@@ -97,8 +98,8 @@ def train_model(model, trainloader, testloader, device='cuda',
     test_losses = []
     test_accs = []
 
-    print(f"\nTraining for {num_epochs} epochs...")
-    pbar = tqdm(range(1, num_epochs + 1), desc="Training")
+    print(f"\nTraining until {target_train_acc}% train accuracy or {max_epochs} epochs...")
+    pbar = tqdm(range(1, max_epochs + 1), desc="Training")
 
     for epoch in pbar:
         train_loss, train_acc = train_epoch(model, trainloader, criterion, optimizer, device)
@@ -117,7 +118,12 @@ def train_model(model, trainloader, testloader, device='cuda',
 
         # Print progress every 10 epochs
         if epoch % 10 == 0:
-            print(f"\nEpoch {epoch}/{num_epochs} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
+            print(f"\nEpoch {epoch}/{max_epochs} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
+
+        # Check if we've reached target train accuracy
+        if train_acc >= target_train_acc:
+            print(f"\nReached target train accuracy {target_train_acc}% at epoch {epoch}. Stopping training.")
+            break
 
     final_train_acc = train_accs[-1]
     final_test_acc = test_accs[-1]
@@ -132,7 +138,7 @@ def train_model(model, trainloader, testloader, device='cuda',
         'final_test_loss': test_losses[-1],
         'final_test_acc': final_test_acc,
         'generalization_gap': final_train_acc - final_test_acc,
-        'total_epochs': num_epochs
+        'total_epochs': len(train_accs)
     }
 
 
@@ -141,7 +147,7 @@ def main():
         description='Experiment 4: Variable-depth MLP on MNIST at fixed MI'
     )
     parser.add_argument('--n_layers', type=int, required=True,
-                        help='Number of hidden layers (1-5)')
+                        help='Number of hidden layers (1-11)')
     parser.add_argument('--mi_bits', type=float, default=2.5,
                         help='Target MI in bits for special pixel (default: 2.5)')
     parser.add_argument('--seed', type=int, required=True,
@@ -162,10 +168,12 @@ def main():
                         help='Learning rate for Adam')
     parser.add_argument('--weight_decay', type=float, default=1e-4,
                         help='Weight decay')
-    parser.add_argument('--num_epochs', type=int, default=50,
-                        help='Number of training epochs')
-    parser.add_argument('--hidden_dim', type=int, default=256,
-                        help='Hidden layer dimension')
+    parser.add_argument('--max_epochs', type=int, default=200,
+                        help='Maximum number of training epochs')
+    parser.add_argument('--target_train_acc', type=float, default=99.85,
+                        help='Target train accuracy to stop training')
+    parser.add_argument('--initial_hidden_dim', type=int, default=1024,
+                        help='Initial hidden layer dimension (halves each layer)')
 
     args = parser.parse_args()
 
@@ -176,24 +184,28 @@ def main():
         torch.cuda.manual_seed(args.seed)
 
     # Build model
-    model = MLP_Variable(num_classes=10, n_layers=args.n_layers, hidden_dim=args.hidden_dim)
+    model = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=args.initial_hidden_dim)
 
     # Force special pixel to be always correct (no noise)
     noise_level = 0.0
 
+    # Get hidden dims for display
+    hidden_dims_str = " → ".join(map(str, model.hidden_dims))
+
     print(f"\n{'='*80}")
     print(f"Experiment 4: MLP Variable Depth on MNIST")
     print(f"{'='*80}")
-    print(f"Architecture:     MLP")
+    print(f"Architecture:     MLP (Halving)")
     print(f"Hidden Layers:    {args.n_layers}")
-    print(f"Hidden Dim:       {args.hidden_dim}")
+    print(f"Hidden Dims:      {hidden_dims_str}")
     print(f"Total Params:     {model.count_parameters():,}")
     print(f"Target MI:        {args.mi_bits} bits")
     print(f"Noise Level:      {noise_level:.4f}")
     print(f"Seed:             {args.seed}")
     print(f"Batch Size:       {args.batch_size}")
     print(f"Learning Rate:    {args.lr}")
-    print(f"Num Epochs:       {args.num_epochs}")
+    print(f"Max Epochs:       {args.max_epochs}")
+    print(f"Target Train Acc: {args.target_train_acc}%")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
 
@@ -210,16 +222,17 @@ def main():
     # Train model
     metrics = train_model(
         model, trainloader, testloader, device=args.device,
-        lr=args.lr, weight_decay=args.weight_decay, num_epochs=args.num_epochs
+        lr=args.lr, weight_decay=args.weight_decay,
+        max_epochs=args.max_epochs, target_train_acc=args.target_train_acc
     )
 
     # Prepare results
-    is_valid = metrics['final_train_acc'] >= 99.0
+    is_valid = metrics['final_train_acc'] >= args.target_train_acc
 
     result = {
         'model': 'MLP',
         'n_layers': args.n_layers,
-        'hidden_dim': args.hidden_dim,
+        'hidden_dims': model.hidden_dims,
         'noise_level': noise_level,
         'mi_bits': args.mi_bits,
         'seed': args.seed,
@@ -247,7 +260,7 @@ def main():
         print(f"{'='*80}\n")
     else:
         print(f"\n{'='*80}")
-        print(f"Training Complete (Invalid - Train Acc < 99%)")
+        print(f"Training Complete (Invalid - Train Acc < {args.target_train_acc}%)")
         print(f"{'='*80}")
         print(f"Total Epochs:     {metrics['total_epochs']}")
         print(f"Train Accuracy:   {metrics['final_train_acc']:.2f}%")
