@@ -15,6 +15,7 @@ results/**
 # Large datasets
 data/cifar-10-batches-py/**
 data/cifar-10-python.tar.gz
+data/MNIST/**
 
 # Large data files
 data/cifar-10-python.tar.gz
