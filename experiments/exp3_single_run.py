@@ -321,7 +321,7 @@ def main():
                         help='Disable train-time augmentation')
     parser.add_argument('--no_bn', action='store_true',
                         help='Disable BatchNorm in variable VGG (default: BN enabled)')
-    parser.add_argument('--dropout_p', type=float, default=0.5,
+    parser.add_argument('--dropout_p', type=float, default=0.0,
                         help='Dropout probability in classifier')
     parser.add_argument('--optimizer', type=str, default='sgd', choices=['sgd', 'adamw'],
                         help='Optimizer type')
