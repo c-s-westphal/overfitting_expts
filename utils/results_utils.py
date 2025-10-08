@@ -23,7 +23,7 @@ def load_experiment_results(experiment_type, model_name):
 def aggregate_results(results_dict):
     aggregated = {}
 
-    for key in ['train_accs', 'test_accs', 'generalization_gaps', 'train_losses', 'test_losses', 'epochs_to_100pct']:
+    for key in ['train_accs', 'test_accs', 'generalization_gaps', 'train_losses', 'test_losses', 'epochs_to_100pct', 'epochs_to_99pct']:
         if key in results_dict:
             data = results_dict[key]
             means = []
@@ -393,6 +393,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
     generalization_gaps = []
     train_losses = []
     test_losses = []
+    epochs_to_99pct = []
     valid_results = []
 
     for n_layers in n_layers_list:
@@ -401,6 +402,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
         layers_gen_gaps = []
         layers_train_losses = []
         layers_test_losses = []
+        layers_epochs_to_99pct = []
         layers_valid = []
 
         seeds_for_layers = sorted(layers_to_seeds[n_layers])
@@ -424,6 +426,14 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
             layers_gen_gaps.append(float(data['generalization_gap']))
             layers_train_losses.append(float(data['train_loss']))
             layers_test_losses.append(float(data['test_loss']))
+
+            # Load epochs_to_99pct if available
+            if 'epochs_to_99pct' in data:
+                epochs_val = int(data['epochs_to_99pct'])
+                layers_epochs_to_99pct.append(epochs_val if epochs_val != -1 else None)
+            else:
+                layers_epochs_to_99pct.append(None)
+
             layers_valid.append(is_valid)
 
         train_accs.append(layers_train_accs)
@@ -431,6 +441,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
         generalization_gaps.append(layers_gen_gaps)
         train_losses.append(layers_train_losses)
         test_losses.append(layers_test_losses)
+        epochs_to_99pct.append(layers_epochs_to_99pct)
         valid_results.append(layers_valid)
 
     return {
@@ -442,6 +453,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
         'generalization_gaps': generalization_gaps,
         'train_losses': train_losses,
         'test_losses': test_losses,
+        'epochs_to_99pct': epochs_to_99pct,
         'valid_results': valid_results,
     }
 

@@ -189,8 +189,8 @@ def plot_experiment_3():
 
 
 def plot_experiment_4():
-    """Plot Experiment 4: MLP Variable - Generalization Gap vs Number of Layers."""
-    plt.figure(figsize=(12, 8))
+    """Plot Experiment 4: MLP Variable - Generalization Gap and Epochs to 99% vs Number of Layers."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
 
     try:
         # Load per-seed results and aggregate
@@ -200,35 +200,66 @@ def plot_experiment_4():
         layers = results['n_layers']
         gaps_mean = aggregated['generalization_gaps_mean']
         gaps_std = aggregated['generalization_gaps_std']
+        epochs_mean = aggregated.get('epochs_to_99pct_mean', [None] * len(layers))
+        epochs_std = aggregated.get('epochs_to_99pct_std', [None] * len(layers))
 
-        valid_layers = []
+        # Collect valid data for generalization gap
+        valid_layers_gap = []
         valid_gaps_mean = []
         valid_gaps_std = []
 
         for n, gap_mean, gap_std in zip(layers, gaps_mean, gaps_std):
             if gap_mean is not None and n >= 2:
-                valid_layers.append(n)
+                valid_layers_gap.append(n)
                 valid_gaps_mean.append(gap_mean)
                 valid_gaps_std.append(gap_std)
 
-        if valid_layers:
-            plt.errorbar(valid_layers, valid_gaps_mean, yerr=valid_gaps_std,
+        # Collect valid data for epochs to 99%
+        valid_layers_epochs = []
+        valid_epochs_mean = []
+        valid_epochs_std = []
+
+        for n, epoch_mean, epoch_std in zip(layers, epochs_mean, epochs_std):
+            if epoch_mean is not None and n >= 2:
+                valid_layers_epochs.append(n)
+                valid_epochs_mean.append(epoch_mean)
+                valid_epochs_std.append(epoch_std)
+
+        # Plot generalization gap
+        if valid_layers_gap:
+            ax1.errorbar(valid_layers_gap, valid_gaps_mean, yerr=valid_gaps_std,
+                         label='MLP (256 neurons/layer)', color='blue', marker='o', capsize=5, linewidth=2)
+
+        # Plot epochs to 99%
+        if valid_layers_epochs:
+            ax2.errorbar(valid_layers_epochs, valid_epochs_mean, yerr=valid_epochs_std,
                          label='MLP (256 neurons/layer)', color='blue', marker='o', capsize=5, linewidth=2)
 
     except FileNotFoundError:
         print(f"Results not found for MLP (exp4)")
 
-    plt.xlabel('Number of Hidden Layers', fontsize=12)
-    plt.ylabel('Generalization Gap (%)', fontsize=12)
-    plt.title('Experiment 4: MLP Generalization Gap vs Network Depth (MI=2.5 bits)', fontsize=14)
-    plt.legend(fontsize=11)
-    plt.grid(True, alpha=0.3)
+    # Configure first subplot (generalization gap)
+    ax1.set_xlabel('Number of Hidden Layers', fontsize=12)
+    ax1.set_ylabel('Generalization Gap (%)', fontsize=12)
+    ax1.set_title('Generalization Gap vs Network Depth', fontsize=14)
+    ax1.legend(fontsize=11)
+    ax1.grid(True, alpha=0.3)
+
+    # Configure second subplot (epochs to 99%)
+    ax2.set_xlabel('Number of Hidden Layers', fontsize=12)
+    ax2.set_ylabel('Epochs to 99% Train Accuracy', fontsize=12)
+    ax2.set_title('Training Speed vs Network Depth', fontsize=14)
+    ax2.legend(fontsize=11)
+    ax2.grid(True, alpha=0.3)
+
+    fig.suptitle('Experiment 4: MLP Variable Depth (MI=2.5 bits)', fontsize=16, y=1.00)
+    plt.tight_layout()
 
     os.makedirs('plots', exist_ok=True)
-    plt.savefig('plots/experiment_4_mlp_gap_vs_depth.png', dpi=300, bbox_inches='tight')
+    plt.savefig('plots/experiment_4_mlp_gap_and_epochs_vs_depth.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-    print("Experiment 4 plot saved to plots/experiment_4_mlp_gap_vs_depth.png")
+    print("Experiment 4 plot saved to plots/experiment_4_mlp_gap_and_epochs_vs_depth.png")
 
 
 def plot_experiment_5():

@@ -72,7 +72,7 @@ def evaluate(model, dataloader, criterion, device):
 
 
 def train_model(model, trainloader, testloader, device='cuda',
-                lr=0.001, weight_decay=1e-4, max_epochs=200, target_train_acc=99.85):
+                lr=0.001, weight_decay=1e-4, max_epochs=200, target_train_acc=99.0):
     """
     Train model until reaching target train accuracy or max epochs with Adam optimizer.
 
@@ -84,10 +84,10 @@ def train_model(model, trainloader, testloader, device='cuda',
         lr: Learning rate for Adam optimizer
         weight_decay: Weight decay (L2 regularization)
         max_epochs: Maximum number of training epochs
-        target_train_acc: Target training accuracy to stop (default: 99.85%)
+        target_train_acc: Target training accuracy to stop (default: 99.0%)
 
     Returns:
-        dict: Training metrics including final accuracies and generalization gap
+        dict: Training metrics including epochs_to_99pct, accuracies, and generalization gap
     """
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
@@ -97,6 +97,10 @@ def train_model(model, trainloader, testloader, device='cuda',
     train_accs = []
     test_losses = []
     test_accs = []
+
+    epochs_to_99pct = -1
+    best_train_acc = 0.0
+    best_train_acc_epoch = -1
 
     print(f"\nTraining until {target_train_acc}% train accuracy or {max_epochs} epochs...")
     pbar = tqdm(range(1, max_epochs + 1), desc="Training")
@@ -110,6 +114,11 @@ def train_model(model, trainloader, testloader, device='cuda',
         test_losses.append(test_loss)
         test_accs.append(test_acc)
 
+        # Track best train accuracy
+        if train_acc > best_train_acc:
+            best_train_acc = train_acc
+            best_train_acc_epoch = epoch - 1  # 0-indexed for list access
+
         pbar.set_postfix({
             'Epoch': epoch,
             'Train Acc': f'{train_acc:.2f}%',
@@ -122,23 +131,36 @@ def train_model(model, trainloader, testloader, device='cuda',
 
         # Check if we've reached target train accuracy
         if train_acc >= target_train_acc:
+            epochs_to_99pct = epoch
             print(f"\nReached target train accuracy {target_train_acc}% at epoch {epoch}. Stopping training.")
             break
 
-    final_train_acc = train_accs[-1]
-    final_test_acc = test_accs[-1]
+    # Determine final metrics
+    if epochs_to_99pct != -1:
+        # We reached target, use final epoch metrics
+        final_train_acc = train_accs[-1]
+        final_test_acc = test_accs[-1]
+        final_train_loss = train_losses[-1]
+        final_test_loss = test_losses[-1]
+    else:
+        # Never reached target, use best train_acc epoch
+        final_train_acc = train_accs[best_train_acc_epoch]
+        final_test_acc = test_accs[best_train_acc_epoch]
+        final_train_loss = train_losses[best_train_acc_epoch]
+        final_test_loss = test_losses[best_train_acc_epoch]
 
     return {
         'train_losses': train_losses,
         'train_accs': train_accs,
         'test_losses': test_losses,
         'test_accs': test_accs,
-        'final_train_loss': train_losses[-1],
+        'final_train_loss': final_train_loss,
         'final_train_acc': final_train_acc,
-        'final_test_loss': test_losses[-1],
+        'final_test_loss': final_test_loss,
         'final_test_acc': final_test_acc,
         'generalization_gap': final_train_acc - final_test_acc,
-        'total_epochs': len(train_accs)
+        'total_epochs': len(train_accs),
+        'epochs_to_99pct': epochs_to_99pct
     }
 
 
@@ -170,7 +192,7 @@ def main():
                         help='Weight decay')
     parser.add_argument('--max_epochs', type=int, default=200,
                         help='Maximum number of training epochs')
-    parser.add_argument('--target_train_acc', type=float, default=99.85,
+    parser.add_argument('--target_train_acc', type=float, default=99.0,
                         help='Target train accuracy to stop training')
     parser.add_argument('--initial_hidden_dim', type=int, default=1024,
                         help='Initial hidden layer dimension (halves each layer)')
@@ -237,6 +259,7 @@ def main():
         'mi_bits': args.mi_bits,
         'seed': args.seed,
         'valid': is_valid,
+        'epochs_to_99pct': metrics['epochs_to_99pct'],
         'total_epochs': metrics['total_epochs'],
         'num_parameters': model.count_parameters(),
         'train_acc': metrics['final_train_acc'],
@@ -248,20 +271,20 @@ def main():
 
     if is_valid:
         print(f"\n{'='*80}")
-        print(f"Training Complete (Valid)")
+        print(f"Training Complete (Valid - Reached {args.target_train_acc}%)")
         print(f"{'='*80}")
-        print(f"Total Epochs:     {metrics['total_epochs']}")
+        print(f"Epochs to {args.target_train_acc}%: {metrics['epochs_to_99pct']}")
         print(f"Train Accuracy:   {metrics['final_train_acc']:.2f}%")
         print(f"Test Accuracy:    {metrics['final_test_acc']:.2f}%")
         print(f"Gen. Gap:         {metrics['generalization_gap']:.2f}%")
         print(f"{'='*80}\n")
     else:
         print(f"\n{'='*80}")
-        print(f"Training Complete (Invalid - Train Acc < {args.target_train_acc}%)")
+        print(f"Training Complete (Invalid - Did Not Reach {args.target_train_acc}%)")
         print(f"{'='*80}")
         print(f"Total Epochs:     {metrics['total_epochs']}")
-        print(f"Train Accuracy:   {metrics['final_train_acc']:.2f}%")
-        print(f"Test Accuracy:    {metrics['final_test_acc']:.2f}%")
+        print(f"Best Train Acc:   {metrics['final_train_acc']:.2f}%")
+        print(f"Test Acc at Best: {metrics['final_test_acc']:.2f}%")
         print(f"Gen. Gap:         {metrics['generalization_gap']:.2f}%")
         print(f"{'='*80}\n")
 
