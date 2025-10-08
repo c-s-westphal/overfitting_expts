@@ -9,13 +9,14 @@ import torch
 import torch.nn as nn
 
 
-# Full VGG configurations (no BatchNorm variant) for CIFAR-10
-# Limited to 2 maxpools to end at 8x8 spatial features
+# Full VGG configurations for CIFAR-10
+# With 3 maxpools positioned to ensure even 4-layer models end at 4x4 spatial features
+# Third maxpool is placed after layer 4 to guarantee all n_layers >= 4 get 4x4 features
 VGG_CONFIGS = {
-    'VGG11': [64, 'M', 128, 'M', 256, 256, 512, 512, 512, 512],
-    'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 512, 512, 512, 512],
-    'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 512, 512, 512, 512, 512, 512],
-    'VGG19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 512, 512, 512, 512, 512, 512, 512, 512],
+    'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 512, 512],
+    'VGG13': [64, 64, 'M', 128, 'M', 128, 'M', 256, 256, 512, 512, 512, 512],
+    'VGG16': [64, 64, 'M', 128, 'M', 128, 'M', 256, 256, 256, 512, 512, 512, 512, 512, 512],
+    'VGG19': [64, 64, 'M', 128, 'M', 128, 'M', 256, 256, 256, 256, 512, 512, 512, 512, 512, 512, 512, 512],
 }
 
 VGG_MAX_LAYERS = {
@@ -98,19 +99,24 @@ class _VGGVariableBase(nn.Module):
         Truncate configuration to first n_layers convolutional layers.
 
         Counts only convolutional layers (integers in config).
-        Stops after n_layers conv layers, includes preceding maxpools.
+        Stops after n_layers conv layers, includes preceding maxpools and any
+        trailing maxpool immediately after the nth layer to ensure proper spatial dimensions.
 
-        Example: VGG11 config = [64, 'M', 128, 'M', 256, 256, 'M', ...]
-        - n_layers=4 → [64, 'M', 128, 'M', 256, 256]
+        Example: VGG11 config = [64, 'M', 128, 'M', 256, 256, 'M', 512, ...]
+        - n_layers=4 → [64, 'M', 128, 'M', 256, 256, 'M']
+        - n_layers=6 → [64, 'M', 128, 'M', 256, 256, 'M', 512, 512]
         """
         conv_count = 0
         truncated_cfg = []
 
-        for item in full_cfg:
+        for idx, item in enumerate(full_cfg):
             if isinstance(item, int):
                 conv_count += 1
                 truncated_cfg.append(item)
                 if conv_count == n_layers:
+                    # Include trailing maxpool if it exists
+                    if idx + 1 < len(full_cfg) and full_cfg[idx + 1] == 'M':
+                        truncated_cfg.append('M')
                     break
             else:
                 # Include pooling layers
