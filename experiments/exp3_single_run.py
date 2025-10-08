@@ -365,8 +365,8 @@ def main():
     model_name, model_fn = arch_map[args.arch]
     model = model_fn(num_classes=10, n_layers=args.n_layers, with_bn=(not args.no_bn), dropout_p=args.dropout_p)
 
-    # Calculate noise level from target MI
-    noise_level = noise_for_target_mi(args.mi_bits, num_classes=10)
+    # Calculate noise level: force special pixel to be always correct (no noise)
+    noise_level = 0.0
 
     print(f"\n{'='*80}")
     print(f"Experiment 3: {model_name} Variable Depth")
