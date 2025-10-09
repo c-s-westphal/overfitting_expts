@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp4_mlp
-#$ -t 1-125
+#$ -t 1-25
 set -euo pipefail
 
 hostname
