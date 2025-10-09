@@ -442,11 +442,15 @@ def plot_experiment_4_occlusion():
     target_depths = [1, 5, 10, 15, 20, 25]
     target_class = 5  # Visualize digit 5
 
-    # Create figure with 2 rows (epoch5, final) and 6 columns (depths)
+    # Create figure with 2 rows (epoch2, final) and 6 columns (depths)
     fig = plt.figure(figsize=(24, 8))
     gs = gridspec.GridSpec(2, 6, figure=fig, hspace=0.3, wspace=0.3)
 
     results_dir = 'results/exp4'
+
+    # Track if we found any data
+    found_any = False
+    im_final = None
 
     # Try to load results for each target depth
     for col_idx, depth in enumerate(target_depths):
@@ -494,6 +498,15 @@ def plot_experiment_4_occlusion():
         im_final = ax_final.imshow(occ_final_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
         ax_final.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nFinal Epoch', fontsize=10)
         ax_final.axis('off')
+
+        found_any = True
+
+    # Check if we found any data
+    if not found_any:
+        plt.close(fig)
+        print("No occlusion data found for any target depths. Skipping occlusion plot.")
+        print("Run experiments with new code to generate occlusion data.")
+        return
 
     # Add colorbar
     fig.colorbar(im_final, ax=fig.get_axes(), orientation='vertical',
