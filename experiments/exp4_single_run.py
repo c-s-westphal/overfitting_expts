@@ -71,40 +71,41 @@ def evaluate(model, dataloader, criterion, device):
     return running_loss / len(dataloader), 100. * correct / total
 
 
-def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples_per_class=10):
+def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples_per_class=256):
     """
     Compute occlusion sensitivity maps for train set.
 
-    For each class, selects samples_per_class random images and computes
-    occlusion sensitivity by measuring increase in loss when each pixel is occluded.
-    Returns averaged occlusion map per class and representative sample images.
+    For each class, takes the first samples_per_class images (deterministic across seeds)
+    and computes occlusion sensitivity by measuring increase in loss when each pixel is occluded.
+    Uses efficient batching: for each pixel position, creates batch of all images with that pixel occluded.
+    Returns averaged occlusion map per class.
 
     Args:
         model: Trained model
         trainloader: Training data loader
         criterion: Loss function
         device: Device to compute on
-        samples_per_class: Number of random samples per class to average over
+        samples_per_class: Number of first samples per class to average over (default: 256)
 
     Returns:
         dict with:
             - 'occlusion_maps': np.array of shape (10, 28, 28) - averaged maps per class
-            - 'sample_images': np.array of shape (10, 28, 28) - representative image per class
+            - 'sample_images': np.array of shape (10, 28, 28) - first image per class
             - 'sample_labels': np.array of shape (10,) - class labels (0-9)
     """
     model.eval()
 
-    # Collect samples per class
+    # Collect first samples_per_class images per class (deterministic)
     class_samples = {i: [] for i in range(10)}
-    class_images = {i: [] for i in range(10)}
+    class_labels = {i: [] for i in range(10)}
 
     with torch.no_grad():
         for inputs, labels in trainloader:
             for i in range(len(labels)):
                 label = labels[i].item()
                 if len(class_samples[label]) < samples_per_class:
-                    class_samples[label].append((inputs[i], label))
-                    class_images[label].append(inputs[i].cpu().numpy())
+                    class_samples[label].append(inputs[i])
+                    class_labels[label].append(label)
 
             # Check if we have enough samples
             if all(len(class_samples[c]) >= samples_per_class for c in range(10)):
@@ -116,46 +117,42 @@ def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples
 
     print("\nComputing occlusion sensitivity maps...")
     for class_idx in tqdm(range(10), desc="Classes", leave=False):
-        class_occlusion_maps = []
+        # Stack all images for this class into a batch
+        images_batch = torch.stack(class_samples[class_idx]).to(device)  # Shape: (256, 1, 28, 28)
+        labels_batch = torch.tensor(class_labels[class_idx]).to(device)  # Shape: (256,)
+        n_samples = images_batch.shape[0]
 
-        for sample_img, label in class_samples[class_idx]:
-            sample_img = sample_img.unsqueeze(0).to(device)  # Shape: (1, 1, 28, 28)
-            label_tensor = torch.tensor([label]).to(device)
+        # Get baseline losses for all images
+        with torch.no_grad():
+            outputs = model(images_batch)
+            baseline_losses = torch.nn.functional.cross_entropy(outputs, labels_batch, reduction='none')
+            baseline_losses = baseline_losses.cpu().numpy()  # Shape: (256,)
 
-            # Get baseline loss
-            with torch.no_grad():
-                output = model(sample_img)
-                baseline_loss = criterion(output, label_tensor).item()
+        # For each pixel position, occlude that pixel in all images and compute loss
+        occlusion_map = np.zeros((28, 28))
 
-            # Create batch of occluded images (784 total, one for each pixel)
-            batch_size = 784
-            occluded_batch = sample_img.repeat(batch_size, 1, 1, 1)  # Shape: (784, 1, 28, 28)
+        for pixel_idx in range(784):
+            row = pixel_idx // 28
+            col = pixel_idx % 28
 
-            # Occlude each pixel
-            for idx in range(784):
-                row = idx // 28
-                col = idx % 28
-                occluded_batch[idx, 0, row, col] = 0
+            # Clone batch and occlude this pixel in all images
+            occluded_batch = images_batch.clone()
+            occluded_batch[:, 0, row, col] = 0
 
-            # Compute losses for all occluded versions in one forward pass
+            # Compute losses for occluded versions
             with torch.no_grad():
                 outputs = model(occluded_batch)
-                label_batch = label_tensor.repeat(batch_size)
-                losses = torch.nn.functional.cross_entropy(outputs, label_batch, reduction='none')
-                losses = losses.cpu().numpy()
+                occluded_losses = torch.nn.functional.cross_entropy(outputs, labels_batch, reduction='none')
+                occluded_losses = occluded_losses.cpu().numpy()  # Shape: (256,)
 
-            # Reshape to 28x28 occlusion map (increase in loss)
-            occlusion_map = (losses - baseline_loss).reshape(28, 28)
-            class_occlusion_maps.append(occlusion_map)
+            # Average loss increase across all samples
+            loss_increase = occluded_losses - baseline_losses
+            occlusion_map[row, col] = np.mean(loss_increase)
 
-        # Average across samples
-        avg_occlusion_map = np.mean(class_occlusion_maps, axis=0)
-        occlusion_maps[class_idx] = avg_occlusion_map
+        occlusion_maps[class_idx] = occlusion_map
 
-        # Find representative sample (closest to mean)
-        distances = [np.linalg.norm(om - avg_occlusion_map) for om in class_occlusion_maps]
-        representative_idx = np.argmin(distances)
-        sample_images[class_idx] = class_images[class_idx][representative_idx].squeeze()  # Remove channel dim
+        # Store first image as sample
+        sample_images[class_idx] = class_samples[class_idx][0].cpu().numpy().squeeze()
 
     print("Occlusion sensitivity computation complete.\n")
 

@@ -454,10 +454,10 @@ def plot_experiment_4_occlusion():
 
     # Try to load results for each target depth
     for col_idx, depth in enumerate(target_depths):
-        # Try to find all result files for this depth (all seeds)
-        file_pattern = f"mlp_layers{depth}_seed*_results.npz"
+        # Load all seeds and average occlusion maps
         import glob
-        matching_files = glob.glob(os.path.join(results_dir, f"mlp_layers{depth}_seed*_results.npz"))
+        all_files = glob.glob(os.path.join(results_dir, f"mlp_layers{depth}_seed*_results.npz"))
+        matching_files = [f for f in all_files if 'nopixel' not in f]
 
         if not matching_files:
             print(f"No results found for depth {depth}")
@@ -482,13 +482,18 @@ def plot_experiment_4_occlusion():
             epoch2_maps.append(occlusion_epoch2[target_class])
             final_maps.append(occlusion_final[target_class])
 
-            # Use first seed's sample image
-            if sample_image is None:
+            # Use seed 0's sample image (all seeds have same first image now)
+            if sample_image is None and 'seed0' in result_file:
                 sample_image = data['sample_images_epoch2'][target_class]
 
         if not epoch2_maps:
             print(f"No occlusion data found for depth {depth}")
             continue
+
+        # Use first available sample image if seed0 not found
+        if sample_image is None:
+            data = np.load(matching_files[0], allow_pickle=True)
+            sample_image = data['sample_images_epoch2'][target_class]
 
         # Average occlusion maps across all seeds
         occ_map_epoch2 = np.mean(epoch2_maps, axis=0)
@@ -559,7 +564,7 @@ def plot_experiment_4_occlusion_nopixel():
 
     # Try to load results for each target depth
     for col_idx, depth in enumerate(target_depths):
-        # Try to find all NOPIXEL result files for this depth (all seeds)
+        # Load all seeds and average occlusion maps
         import glob
         matching_files = glob.glob(os.path.join(results_dir, f"mlp_layers{depth}_seed*_nopixel_results.npz"))
 
@@ -586,13 +591,18 @@ def plot_experiment_4_occlusion_nopixel():
             epoch2_maps.append(occlusion_epoch2[target_class])
             final_maps.append(occlusion_final[target_class])
 
-            # Use first seed's sample image
-            if sample_image is None:
+            # Use seed 0's sample image (all seeds have same first image now)
+            if sample_image is None and 'seed0' in result_file:
                 sample_image = data['sample_images_epoch2'][target_class]
 
         if not epoch2_maps:
             print(f"No nopixel occlusion data found for depth {depth}")
             continue
+
+        # Use first available sample image if seed0 not found
+        if sample_image is None:
+            data = np.load(matching_files[0], allow_pickle=True)
+            sample_image = data['sample_images_epoch2'][target_class]
 
         # Average occlusion maps across all seeds
         occ_map_epoch2 = np.mean(epoch2_maps, axis=0)
