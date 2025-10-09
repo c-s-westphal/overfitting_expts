@@ -194,8 +194,8 @@ def main():
                         help='Maximum number of training epochs')
     parser.add_argument('--target_train_acc', type=float, default=99.0,
                         help='Target train accuracy to stop training')
-    parser.add_argument('--initial_hidden_dim', type=int, default=512,
-                        help='Hidden layer dimension (fixed for all layers)')
+    parser.add_argument('--initial_hidden_dim', type=int, default=1024,
+                        help='Reference neurons for 1-layer network (determines param budget)')
 
     args = parser.parse_args()
 
@@ -205,21 +205,46 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(args.seed)
 
+    # Calculate neurons per layer to match parameter budget
+    # Formula accounts for bias terms:
+    # 1 layer: (784+1)*N + (N+1)*10 = 795*N + 10
+    # L layers: (784+1)*Nl + (L-1)*(Nl+1)*Nl + (Nl+1)*10
+    #         = 785*Nl + (L-1)*Nl^2 + (L-1)*Nl + 10*Nl + 10
+    #         = (L-1)*Nl^2 + (794+L)*Nl + 10
+    # Setting equal: 795*N + 10 = (L-1)*Nl^2 + (794+L)*Nl + 10
+    # Simplifying: (L-1)*Nl^2 + (794+L)*Nl - 795*N = 0
+    # Nl = (-(794+L) + sqrt((794+L)^2 + 4*(L-1)*795*N)) / (2*(L-1))
+
+    N_reference = args.initial_hidden_dim
+    L = args.n_layers
+
+    if L == 1:
+        neurons_per_layer = N_reference
+    else:
+        a = L - 1
+        b = 794 + L
+        c = -795 * N_reference
+        discriminant = b**2 - 4*a*c
+        neurons_per_layer = round((-b + np.sqrt(discriminant)) / (2*a))
+
     # Build model (without BatchNorm for under-parameterization study)
-    model = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=args.initial_hidden_dim,
+    model = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=neurons_per_layer,
                          with_bn=False)
 
     # Force special pixel to be always correct (no noise)
     noise_level = 0.0
 
     # Get hidden dims for display
-    hidden_dims_str = f"{model.hidden_dim} × {args.n_layers}"
+    hidden_dims_str = f"{neurons_per_layer} × {args.n_layers}"
+    reference_params = 795 * N_reference + 10  # Including bias terms
 
     print(f"\n{'='*80}")
     print(f"Experiment 4: MLP Variable Depth on MNIST")
     print(f"{'='*80}")
-    print(f"Architecture:     MLP (Fixed 256 neurons)")
+    print(f"Architecture:     MLP (Constant param budget)")
+    print(f"Reference:        1 layer × {N_reference} neurons = {reference_params:,} params")
     print(f"Hidden Layers:    {args.n_layers}")
+    print(f"Neurons/Layer:    {neurons_per_layer}")
     print(f"Hidden Dims:      {hidden_dims_str}")
     print(f"Total Params:     {model.count_parameters():,}")
     print(f"Target MI:        {args.mi_bits} bits")
@@ -305,8 +330,8 @@ def main():
     print(f"Starting Experiment WITHOUT Special Pixel")
     print(f"{'='*80}\n")
 
-    # Build new model (fresh initialization, without BatchNorm for under-parameterization study)
-    model_nopixel = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=args.initial_hidden_dim,
+    # Build new model (fresh initialization, without BatchNorm, same neurons_per_layer)
+    model_nopixel = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=neurons_per_layer,
                                  with_bn=False)
 
     # Load data WITHOUT special pixel
