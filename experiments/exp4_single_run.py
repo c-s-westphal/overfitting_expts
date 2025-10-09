@@ -181,7 +181,7 @@ def train_model(model, trainloader, testloader, device='cuda',
         weight_decay: Weight decay (L2 regularization)
         max_epochs: Maximum number of training epochs
         target_train_acc: Target training accuracy to stop (default: 99.0%)
-        compute_occlusion: If True, compute occlusion sensitivity at epoch 5 and final
+        compute_occlusion: If True, compute occlusion sensitivity at epoch 2 and final
 
     Returns:
         dict: Training metrics including epochs_to_99pct, accuracies, and generalization gap
@@ -200,9 +200,9 @@ def train_model(model, trainloader, testloader, device='cuda',
     best_train_acc_epoch = -1
 
     # Storage for occlusion sensitivity
-    occlusion_epoch5 = None
+    occlusion_epoch2 = None
     occlusion_final = None
-    gap_epoch5 = None
+    gap_epoch2 = None
 
     print(f"\nTraining until {target_train_acc}% train accuracy or {max_epochs} epochs...")
     pbar = tqdm(range(1, max_epochs + 1), desc="Training")
@@ -231,14 +231,14 @@ def train_model(model, trainloader, testloader, device='cuda',
         if epoch % 10 == 0:
             print(f"\nEpoch {epoch}/{max_epochs} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
 
-        # Compute occlusion sensitivity at epoch 5
-        if compute_occlusion and epoch == 5:
+        # Compute occlusion sensitivity at epoch 2
+        if compute_occlusion and epoch == 2:
             print(f"\n{'='*80}")
-            print(f"Computing occlusion sensitivity at epoch 5...")
+            print(f"Computing occlusion sensitivity at epoch 2...")
             print(f"{'='*80}")
-            occlusion_epoch5 = compute_occlusion_sensitivity(model, trainloader, criterion, device)
-            gap_epoch5 = train_acc - test_acc
-            print(f"Epoch 5 - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap_epoch5:.2f}%")
+            occlusion_epoch2 = compute_occlusion_sensitivity(model, trainloader, criterion, device)
+            gap_epoch2 = train_acc - test_acc
+            print(f"Epoch 2 - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap_epoch2:.2f}%")
             print(f"{'='*80}\n")
 
         # Check if we've reached target train accuracy
@@ -281,9 +281,9 @@ def train_model(model, trainloader, testloader, device='cuda',
         'generalization_gap': final_train_acc - final_test_acc,
         'total_epochs': len(train_accs),
         'epochs_to_99pct': epochs_to_99pct,
-        'occlusion_epoch5': occlusion_epoch5,
+        'occlusion_epoch2': occlusion_epoch2,
         'occlusion_final': occlusion_final,
-        'gap_epoch5': gap_epoch5
+        'gap_epoch2': gap_epoch2
     }
 
 
@@ -417,15 +417,15 @@ def main():
         'generalization_gap': metrics['generalization_gap'],
         'train_loss': metrics['final_train_loss'],
         'test_loss': metrics['final_test_loss'],
-        'gap_epoch5': metrics['gap_epoch5'],
+        'gap_epoch2': metrics['gap_epoch2'],
     }
 
     # Add occlusion data if available
-    if metrics['occlusion_epoch5'] is not None:
+    if metrics['occlusion_epoch2'] is not None:
         result.update({
-            'occlusion_maps_epoch5': metrics['occlusion_epoch5']['occlusion_maps'],
-            'sample_images_epoch5': metrics['occlusion_epoch5']['sample_images'],
-            'sample_labels_epoch5': metrics['occlusion_epoch5']['sample_labels'],
+            'occlusion_maps_epoch2': metrics['occlusion_epoch2']['occlusion_maps'],
+            'sample_images_epoch2': metrics['occlusion_epoch2']['sample_images'],
+            'sample_labels_epoch2': metrics['occlusion_epoch2']['sample_labels'],
         })
     if metrics['occlusion_final'] is not None:
         result.update({
@@ -507,15 +507,15 @@ def main():
         'generalization_gap': metrics_nopixel['generalization_gap'],
         'train_loss': metrics_nopixel['final_train_loss'],
         'test_loss': metrics_nopixel['final_test_loss'],
-        'gap_epoch5': metrics_nopixel['gap_epoch5'],
+        'gap_epoch2': metrics_nopixel['gap_epoch2'],
     }
 
     # Add occlusion data if available
-    if metrics_nopixel['occlusion_epoch5'] is not None:
+    if metrics_nopixel['occlusion_epoch2'] is not None:
         result_nopixel.update({
-            'occlusion_maps_epoch5': metrics_nopixel['occlusion_epoch5']['occlusion_maps'],
-            'sample_images_epoch5': metrics_nopixel['occlusion_epoch5']['sample_images'],
-            'sample_labels_epoch5': metrics_nopixel['occlusion_epoch5']['sample_labels'],
+            'occlusion_maps_epoch2': metrics_nopixel['occlusion_epoch2']['occlusion_maps'],
+            'sample_images_epoch2': metrics_nopixel['occlusion_epoch2']['sample_images'],
+            'sample_labels_epoch2': metrics_nopixel['occlusion_epoch2']['sample_labels'],
         })
     if metrics_nopixel['occlusion_final'] is not None:
         result_nopixel.update({

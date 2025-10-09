@@ -235,23 +235,23 @@ def plot_experiment_4():
         aggregated = aggregate_results(results)
 
         layers = results['n_layers']
-        gap_epoch5_mean = aggregated.get('gap_epoch5_mean', [None] * len(layers))
-        gap_epoch5_std = aggregated.get('gap_epoch5_std', [None] * len(layers))
+        gap_epoch2_mean = aggregated.get('gap_epoch2_mean', [None] * len(layers))
+        gap_epoch2_std = aggregated.get('gap_epoch2_std', [None] * len(layers))
         gaps_mean = aggregated['generalization_gaps_mean']
         gaps_std = aggregated['generalization_gaps_std']
         epochs_mean = aggregated.get('epochs_to_99pct_mean', [None] * len(layers))
         epochs_std = aggregated.get('epochs_to_99pct_std', [None] * len(layers))
 
-        # Collect valid data for gap at epoch 5
-        valid_layers_gap5 = []
-        valid_gap5_mean = []
-        valid_gap5_std = []
+        # Collect valid data for gap at epoch 2
+        valid_layers_gap2 = []
+        valid_gap2_mean = []
+        valid_gap2_std = []
 
-        for n, gap_mean, gap_std in zip(layers, gap_epoch5_mean, gap_epoch5_std):
+        for n, gap_mean, gap_std in zip(layers, gap_epoch2_mean, gap_epoch2_std):
             if gap_mean is not None and n >= 2:
-                valid_layers_gap5.append(n)
-                valid_gap5_mean.append(gap_mean)
-                valid_gap5_std.append(gap_std)
+                valid_layers_gap2.append(n)
+                valid_gap2_mean.append(gap_mean)
+                valid_gap2_std.append(gap_std)
 
         # Collect valid data for generalization gap (final)
         valid_layers_gap = []
@@ -275,9 +275,9 @@ def plot_experiment_4():
                 valid_epochs_mean.append(epoch_mean)
                 valid_epochs_std.append(epoch_std)
 
-        # Plot gap at epoch 5 (blue)
-        if valid_layers_gap5:
-            ax1.errorbar(valid_layers_gap5, valid_gap5_mean, yerr=valid_gap5_std,
+        # Plot gap at epoch 2 (blue)
+        if valid_layers_gap2:
+            ax1.errorbar(valid_layers_gap2, valid_gap2_mean, yerr=valid_gap2_std,
                          label='With Special Pixel', color='blue', marker='o', capsize=5, linewidth=2)
 
         # Plot final generalization gap (blue)
@@ -299,23 +299,23 @@ def plot_experiment_4():
         aggregated_nopixel = aggregate_results(results_nopixel)
 
         layers_nopixel = results_nopixel['n_layers']
-        gap_epoch5_mean_nopixel = aggregated_nopixel.get('gap_epoch5_mean', [None] * len(layers_nopixel))
-        gap_epoch5_std_nopixel = aggregated_nopixel.get('gap_epoch5_std', [None] * len(layers_nopixel))
+        gap_epoch2_mean_nopixel = aggregated_nopixel.get('gap_epoch2_mean', [None] * len(layers_nopixel))
+        gap_epoch2_std_nopixel = aggregated_nopixel.get('gap_epoch2_std', [None] * len(layers_nopixel))
         gaps_mean_nopixel = aggregated_nopixel['generalization_gaps_mean']
         gaps_std_nopixel = aggregated_nopixel['generalization_gaps_std']
         epochs_mean_nopixel = aggregated_nopixel.get('epochs_to_99pct_mean', [None] * len(layers_nopixel))
         epochs_std_nopixel = aggregated_nopixel.get('epochs_to_99pct_std', [None] * len(layers_nopixel))
 
-        # Collect valid data for gap at epoch 5
-        valid_layers_gap5_nopixel = []
-        valid_gap5_mean_nopixel = []
-        valid_gap5_std_nopixel = []
+        # Collect valid data for gap at epoch 2
+        valid_layers_gap2_nopixel = []
+        valid_gap2_mean_nopixel = []
+        valid_gap2_std_nopixel = []
 
-        for n, gap_mean, gap_std in zip(layers_nopixel, gap_epoch5_mean_nopixel, gap_epoch5_std_nopixel):
+        for n, gap_mean, gap_std in zip(layers_nopixel, gap_epoch2_mean_nopixel, gap_epoch2_std_nopixel):
             if gap_mean is not None and n >= 2:
-                valid_layers_gap5_nopixel.append(n)
-                valid_gap5_mean_nopixel.append(gap_mean)
-                valid_gap5_std_nopixel.append(gap_std)
+                valid_layers_gap2_nopixel.append(n)
+                valid_gap2_mean_nopixel.append(gap_mean)
+                valid_gap2_std_nopixel.append(gap_std)
 
         # Collect valid data for generalization gap (final)
         valid_layers_gap_nopixel = []
@@ -339,9 +339,9 @@ def plot_experiment_4():
                 valid_epochs_mean_nopixel.append(epoch_mean)
                 valid_epochs_std_nopixel.append(epoch_std)
 
-        # Plot gap at epoch 5 (red)
-        if valid_layers_gap5_nopixel:
-            ax1.errorbar(valid_layers_gap5_nopixel, valid_gap5_mean_nopixel, yerr=valid_gap5_std_nopixel,
+        # Plot gap at epoch 2 (red)
+        if valid_layers_gap2_nopixel:
+            ax1.errorbar(valid_layers_gap2_nopixel, valid_gap2_mean_nopixel, yerr=valid_gap2_std_nopixel,
                          label='Without Special Pixel', color='red', marker='s', capsize=5, linewidth=2)
 
         # Plot final generalization gap (red)
@@ -357,10 +357,10 @@ def plot_experiment_4():
     except FileNotFoundError:
         print(f"Results not found for MLP without pixel (exp4)")
 
-    # Configure first subplot (gap at epoch 5)
+    # Configure first subplot (gap at epoch 2)
     ax1.set_xlabel('Number of Hidden Layers', fontsize=12)
     ax1.set_ylabel('Generalization Gap (%)', fontsize=12)
-    ax1.set_title('Generalization Gap at Epoch 5', fontsize=14)
+    ax1.set_title('Generalization Gap at Epoch 2', fontsize=14)
     ax1.legend(fontsize=11)
     ax1.grid(True, alpha=0.3)
 
@@ -434,7 +434,7 @@ def plot_experiment_5():
 def plot_experiment_4_occlusion():
     """
     Plot Experiment 4 occlusion sensitivity visualization.
-    2 rows × 6 columns showing occlusion maps at epoch 5 (top) and final epoch (bottom)
+    2 rows × 6 columns showing occlusion maps at epoch 2 (top) and final epoch (bottom)
     for depths: 1, 5, 10, 15, 20, 25 layers.
     """
     import matplotlib.gridspec as gridspec
@@ -464,29 +464,29 @@ def plot_experiment_4_occlusion():
         data = np.load(result_file, allow_pickle=True)
 
         # Extract occlusion data
-        if 'occlusion_maps_epoch5' not in data or 'occlusion_maps_final' not in data:
+        if 'occlusion_maps_epoch2' not in data or 'occlusion_maps_final' not in data:
             print(f"No occlusion data found for depth {depth}")
             continue
 
-        occlusion_epoch5 = data['occlusion_maps_epoch5']
+        occlusion_epoch2 = data['occlusion_maps_epoch2']
         occlusion_final = data['occlusion_maps_final']
-        sample_image = data['sample_images_epoch5'][target_class]  # Same image for both epochs
+        sample_image = data['sample_images_epoch2'][target_class]  # Same image for both epochs
 
         # Get occlusion maps for target class
-        occ_map_epoch5 = occlusion_epoch5[target_class]
+        occ_map_epoch2 = occlusion_epoch2[target_class]
         occ_map_final = occlusion_final[target_class]
 
         # Normalize occlusion maps to [0, 1] for visualization
         # Higher values = more important
-        occ_epoch5_norm = (occ_map_epoch5 - occ_map_epoch5.min()) / (occ_map_epoch5.max() - occ_map_epoch5.min() + 1e-10)
+        occ_epoch2_norm = (occ_map_epoch2 - occ_map_epoch2.min()) / (occ_map_epoch2.max() - occ_map_epoch2.min() + 1e-10)
         occ_final_norm = (occ_map_final - occ_map_final.min()) / (occ_map_final.max() - occ_map_final.min() + 1e-10)
 
-        # Plot epoch 5 (top row)
-        ax_epoch5 = fig.add_subplot(gs[0, col_idx])
-        ax_epoch5.imshow(sample_image, cmap='gray', alpha=0.7)
-        im_epoch5 = ax_epoch5.imshow(occ_epoch5_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
-        ax_epoch5.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nEpoch 5', fontsize=10)
-        ax_epoch5.axis('off')
+        # Plot epoch 2 (top row)
+        ax_epoch2 = fig.add_subplot(gs[0, col_idx])
+        ax_epoch2.imshow(sample_image, cmap='gray', alpha=0.7)
+        im_epoch2 = ax_epoch2.imshow(occ_epoch2_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
+        ax_epoch2.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nEpoch 2', fontsize=10)
+        ax_epoch2.axis('off')
 
         # Plot final epoch (bottom row)
         ax_final = fig.add_subplot(gs[1, col_idx])
