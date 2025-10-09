@@ -434,17 +434,17 @@ def plot_experiment_5():
 def plot_experiment_4_occlusion():
     """
     Plot Experiment 4 occlusion sensitivity visualization.
-    2 rows × 6 columns showing occlusion maps at epoch 2 (top) and final epoch (bottom)
-    for depths: 1, 5, 10, 15, 20, 25 layers.
+    2 rows × 5 columns showing occlusion maps at epoch 2 (top) and final epoch (bottom)
+    for depths: 5, 10, 15, 20, 25 layers.
     """
     import matplotlib.gridspec as gridspec
 
-    target_depths = [1, 5, 10, 15, 20, 25]
+    target_depths = [5, 10, 15, 20, 25]
     target_class = 5  # Visualize digit 5
 
-    # Create figure with 2 rows (epoch2, final) and 6 columns (depths)
-    fig = plt.figure(figsize=(24, 8))
-    gs = gridspec.GridSpec(2, 6, figure=fig, hspace=0.3, wspace=0.3)
+    # Create figure with 2 rows (epoch2, final) and 5 columns (depths)
+    fig = plt.figure(figsize=(20, 8))
+    gs = gridspec.GridSpec(2, 5, figure=fig, hspace=0.3, wspace=0.3)
 
     results_dir = 'results/exp4'
 
