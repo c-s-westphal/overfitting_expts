@@ -196,6 +196,8 @@ def main():
                         help='Target train accuracy to stop training')
     parser.add_argument('--initial_hidden_dim', type=int, default=1024,
                         help='Initial hidden layer dimension (halves each layer)')
+    parser.add_argument('--no_bn', action='store_true',
+                        help='Disable BatchNorm in MLP (default: BN enabled)')
 
     args = parser.parse_args()
 
@@ -205,8 +207,9 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(args.seed)
 
-    # Build model
-    model = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=args.initial_hidden_dim)
+    # Build model (with BatchNorm by default)
+    model = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=args.initial_hidden_dim,
+                         with_bn=(not args.no_bn))
 
     # Force special pixel to be always correct (no noise)
     noise_level = 0.0
@@ -304,8 +307,9 @@ def main():
     print(f"Starting Experiment WITHOUT Special Pixel")
     print(f"{'='*80}\n")
 
-    # Build new model (fresh initialization)
-    model_nopixel = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=args.initial_hidden_dim)
+    # Build new model (fresh initialization, with BatchNorm by default)
+    model_nopixel = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=args.initial_hidden_dim,
+                                 with_bn=(not args.no_bn))
 
     # Load data WITHOUT special pixel
     trainloader_nopixel, testloader_nopixel = get_mnist_dataloaders(

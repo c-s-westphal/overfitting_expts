@@ -24,9 +24,9 @@ class MLP_Variable(nn.Module):
         num_classes (int): Number of output classes (default: 10)
         n_layers (int): Number of hidden layers (1-50)
         initial_hidden_dim (int): Hidden dimension for all layers (default: 256)
-        with_bn (bool): Whether to use BatchNorm (default: False)
+        with_bn (bool): Whether to use BatchNorm (default: True)
     """
-    def __init__(self, num_classes=10, n_layers=3, initial_hidden_dim=256, with_bn=False):
+    def __init__(self, num_classes=10, n_layers=3, initial_hidden_dim=256, with_bn=True):
         super(MLP_Variable, self).__init__()
 
         if n_layers < 1 or n_layers > 50:
