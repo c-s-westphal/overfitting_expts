@@ -536,6 +536,110 @@ def plot_experiment_4_occlusion():
     print("Experiment 4 occlusion plot saved to plots/experiment_4_occlusion_sensitivity.png")
 
 
+def plot_experiment_4_occlusion_nopixel():
+    """
+    Plot Experiment 4 occlusion sensitivity visualization for NO PIXEL experiments.
+    2 rows × 5 columns showing occlusion maps at epoch 2 (top) and final epoch (bottom)
+    for depths: 5, 10, 15, 20, 25 layers.
+    """
+    import matplotlib.gridspec as gridspec
+
+    target_depths = [5, 10, 15, 20, 25]
+    target_class = 5  # Visualize digit 5
+
+    # Create figure with 2 rows (epoch2, final) and 5 columns (depths)
+    fig = plt.figure(figsize=(20, 8))
+    gs = gridspec.GridSpec(2, 5, figure=fig, hspace=0.3, wspace=0.3)
+
+    results_dir = 'results/exp4'
+
+    # Track if we found any data
+    found_any = False
+    im_final = None
+
+    # Try to load results for each target depth
+    for col_idx, depth in enumerate(target_depths):
+        # Try to find all NOPIXEL result files for this depth (all seeds)
+        import glob
+        matching_files = glob.glob(os.path.join(results_dir, f"mlp_layers{depth}_seed*_nopixel_results.npz"))
+
+        if not matching_files:
+            print(f"No nopixel results found for depth {depth}")
+            continue
+
+        # Collect occlusion maps across all seeds
+        epoch2_maps = []
+        final_maps = []
+        sample_image = None
+
+        for result_file in matching_files:
+            data = np.load(result_file, allow_pickle=True)
+
+            # Extract occlusion data
+            if 'occlusion_maps_epoch2' not in data or 'occlusion_maps_final' not in data:
+                continue
+
+            occlusion_epoch2 = data['occlusion_maps_epoch2']
+            occlusion_final = data['occlusion_maps_final']
+
+            # Get occlusion maps for target class
+            epoch2_maps.append(occlusion_epoch2[target_class])
+            final_maps.append(occlusion_final[target_class])
+
+            # Use first seed's sample image
+            if sample_image is None:
+                sample_image = data['sample_images_epoch2'][target_class]
+
+        if not epoch2_maps:
+            print(f"No nopixel occlusion data found for depth {depth}")
+            continue
+
+        # Average occlusion maps across all seeds
+        occ_map_epoch2 = np.mean(epoch2_maps, axis=0)
+        occ_map_final = np.mean(final_maps, axis=0)
+
+        # Normalize occlusion maps to [0, 1] for visualization
+        # Higher values = more important
+        occ_epoch2_norm = (occ_map_epoch2 - occ_map_epoch2.min()) / (occ_map_epoch2.max() - occ_map_epoch2.min() + 1e-10)
+        occ_final_norm = (occ_map_final - occ_map_final.min()) / (occ_map_final.max() - occ_map_final.min() + 1e-10)
+
+        # Plot epoch 2 (top row)
+        ax_epoch2 = fig.add_subplot(gs[0, col_idx])
+        ax_epoch2.imshow(sample_image, cmap='gray', alpha=0.7)
+        im_epoch2 = ax_epoch2.imshow(occ_epoch2_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
+        ax_epoch2.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nEpoch 2', fontsize=10)
+        ax_epoch2.axis('off')
+
+        # Plot final epoch (bottom row)
+        ax_final = fig.add_subplot(gs[1, col_idx])
+        ax_final.imshow(sample_image, cmap='gray', alpha=0.7)
+        im_final = ax_final.imshow(occ_final_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
+        ax_final.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nFinal Epoch', fontsize=10)
+        ax_final.axis('off')
+
+        found_any = True
+
+    # Check if we found any data
+    if not found_any:
+        plt.close(fig)
+        print("No nopixel occlusion data found for any target depths. Skipping nopixel occlusion plot.")
+        print("Run experiments with new code to generate nopixel occlusion data.")
+        return
+
+    # Add colorbar
+    fig.colorbar(im_final, ax=fig.get_axes(), orientation='vertical',
+                 label='Occlusion Sensitivity (normalized)', shrink=0.6, pad=0.02)
+
+    fig.suptitle(f'Experiment 4: Occlusion Sensitivity for Digit {target_class} (No Special Pixel)',
+                 fontsize=16, y=0.98)
+
+    os.makedirs('plots', exist_ok=True)
+    plt.savefig('plots/experiment_4_occlusion_sensitivity_nopixel.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print("Experiment 4 nopixel occlusion plot saved to plots/experiment_4_occlusion_sensitivity_nopixel.png")
+
+
 def main():
     print("Generating plots...")
     plot_experiment_1()
@@ -543,6 +647,7 @@ def main():
     plot_experiment_3()
     plot_experiment_4()
     plot_experiment_4_occlusion()
+    plot_experiment_4_occlusion_nopixel()
     plot_experiment_5()
     print("All plots generated successfully!")
 
