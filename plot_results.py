@@ -115,13 +115,12 @@ def plot_experiment_3():
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
 
+    # Plot WITH special pixel (solid lines, circles)
     for model, color in models:
         try:
-            # Load per-seed results and aggregate
-            results = load_exp3_results_from_per_seed(model, results_dir='results/exp3')
+            results = load_exp3_results_from_per_seed(model, results_dir='results/exp3', include_nopixel=False)
             aggregated = aggregate_results(results)
 
-            # Get n_layers (or depths for backward compatibility)
             layer_key = 'n_layers' if 'n_layers' in results else 'depths'
             layers = results[layer_key]
             gaps_mean = aggregated['generalization_gaps_mean']
@@ -137,7 +136,6 @@ def plot_experiment_3():
             valid_epochs_std = []
 
             for n, gap_mean, gap_std, epoch_mean, epoch_std in zip(layers, gaps_mean, gaps_std, epochs_mean, epochs_std):
-                # Only include data where epochs_to_100pct is available
                 if gap_mean is not None and epoch_mean is not None:
                     valid_layers.append(n)
                     valid_gaps_mean.append(gap_mean)
@@ -145,18 +143,63 @@ def plot_experiment_3():
                     valid_epochs_mean.append(epoch_mean)
                     valid_epochs_std.append(epoch_std)
 
-            # Plot generalization gap
+            # Plot generalization gap (solid line)
             if valid_layers:
                 ax1.errorbar(valid_layers, valid_gaps_mean, yerr=valid_gaps_std,
-                             label=model, color=color, marker='o', capsize=5, linewidth=2)
+                             label=f'{model} (With Pixel)', color=color, marker='o',
+                             linestyle='-', capsize=5, linewidth=2)
 
-            # Plot epochs to 100%
+            # Plot epochs to 100% (solid line)
             if valid_layers:
                 ax2.errorbar(valid_layers, valid_epochs_mean, yerr=valid_epochs_std,
-                             label=model, color=color, marker='o', capsize=5, linewidth=2)
+                             label=f'{model} (With Pixel)', color=color, marker='o',
+                             linestyle='-', capsize=5, linewidth=2)
 
         except FileNotFoundError:
-            print(f"Results not found for {model} (exp3)")
+            print(f"Results not found for {model} with pixel (exp3)")
+
+    # Plot WITHOUT special pixel (dashed lines, squares)
+    for model, color in models:
+        try:
+            results_nopixel = load_exp3_results_from_per_seed(model, results_dir='results/exp3', include_nopixel=True)
+            aggregated_nopixel = aggregate_results(results_nopixel)
+
+            layer_key = 'n_layers' if 'n_layers' in results_nopixel else 'depths'
+            layers_nopixel = results_nopixel[layer_key]
+            gaps_mean_nopixel = aggregated_nopixel['generalization_gaps_mean']
+            gaps_std_nopixel = aggregated_nopixel['generalization_gaps_std']
+            epochs_mean_nopixel = aggregated_nopixel.get('epochs_to_100pct_mean', [None] * len(layers_nopixel))
+            epochs_std_nopixel = aggregated_nopixel.get('epochs_to_100pct_std', [None] * len(layers_nopixel))
+
+            # Collect valid data
+            valid_layers_nopixel = []
+            valid_gaps_mean_nopixel = []
+            valid_gaps_std_nopixel = []
+            valid_epochs_mean_nopixel = []
+            valid_epochs_std_nopixel = []
+
+            for n, gap_mean, gap_std, epoch_mean, epoch_std in zip(layers_nopixel, gaps_mean_nopixel, gaps_std_nopixel, epochs_mean_nopixel, epochs_std_nopixel):
+                if gap_mean is not None and epoch_mean is not None:
+                    valid_layers_nopixel.append(n)
+                    valid_gaps_mean_nopixel.append(gap_mean)
+                    valid_gaps_std_nopixel.append(gap_std)
+                    valid_epochs_mean_nopixel.append(epoch_mean)
+                    valid_epochs_std_nopixel.append(epoch_std)
+
+            # Plot generalization gap (dashed line)
+            if valid_layers_nopixel:
+                ax1.errorbar(valid_layers_nopixel, valid_gaps_mean_nopixel, yerr=valid_gaps_std_nopixel,
+                             label=f'{model} (No Pixel)', color=color, marker='s',
+                             linestyle='--', capsize=5, linewidth=2)
+
+            # Plot epochs to 100% (dashed line)
+            if valid_layers_nopixel:
+                ax2.errorbar(valid_layers_nopixel, valid_epochs_mean_nopixel, yerr=valid_epochs_std_nopixel,
+                             label=f'{model} (No Pixel)', color=color, marker='s',
+                             linestyle='--', capsize=5, linewidth=2)
+
+        except FileNotFoundError:
+            print(f"Results not found for {model} without pixel (exp3)")
 
     # Configure first subplot (generalization gap)
     ax1.set_xlabel('Number of Convolutional Layers', fontsize=12)

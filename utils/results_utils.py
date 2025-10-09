@@ -261,10 +261,11 @@ def load_exp2_results_from_per_seed(model_name, results_dir='results/exp2'):
     }
 
 
-def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
+def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3', include_nopixel=False):
     """Aggregate per-seed exp3 results on the fly for a given model.
 
     Expects files named like: "vgg{X}var_layers{n}_seed{seed}_results.npz".
+    If include_nopixel=True, also loads "vgg{X}var_layers{n}_seed{seed}_nopixel_results.npz".
     Returns a dict compatible with aggregate_results, including 'n_layers'.
     """
     # Map model_name to file prefix
@@ -275,7 +276,8 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
     if not os.path.isdir(results_dir):
         raise FileNotFoundError(f"Results directory not found: {results_dir}")
 
-    file_pattern = re.compile(rf"^{re.escape(file_prefix)}_layers(\d+)_seed(\d+)_results\.npz$")
+    suffix = "_nopixel" if include_nopixel else ""
+    file_pattern = re.compile(rf"^{re.escape(file_prefix)}_layers(\d+)_seed(\d+){re.escape(suffix)}_results\.npz$")
 
     layers_to_seeds = {}
     for fname in os.listdir(results_dir):
@@ -314,7 +316,7 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
         seeds_for_layers = sorted(layers_to_seeds[n_layers])
         for seed in seeds_for_layers:
             fpath = os.path.join(
-                results_dir, f"{file_prefix}_layers{n_layers}_seed{seed}_results.npz"
+                results_dir, f"{file_prefix}_layers{n_layers}_seed{seed}{suffix}_results.npz"
             )
             if not os.path.exists(fpath):
                 # skip silently per user request
@@ -354,7 +356,7 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
         valid_results.append(layers_valid)
 
     return {
-        'model': model_name,
+        'model': model_name + (' (No Pixel)' if include_nopixel else ''),
         'n_layers': n_layers_list,
         'seeds': all_seeds_sorted,
         'train_accs': train_accs,

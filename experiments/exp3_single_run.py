@@ -16,7 +16,7 @@ from tqdm import tqdm
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.vgg_variable_family import VGG11_Variable, VGG13_Variable, VGG16_Variable, VGG19_Variable
-from data.data_loader import get_cifar10_special_pixel_dataloaders
+from data.data_loader import get_cifar10_special_pixel_dataloaders, get_cifar10_dataloaders
 
 
 def noise_for_target_mi(target_mi_bits, num_classes=10):
@@ -278,6 +278,8 @@ def main():
                         help='Column for special pixel (0-31)')
     parser.add_argument('--no_augment', action='store_true',
                         help='Disable train-time augmentation')
+    parser.add_argument('--no_pixel', action='store_true',
+                        help='Train without special pixel (use regular CIFAR10)')
     parser.add_argument('--no_bn', action='store_true',
                         help='Disable BatchNorm in variable VGG (default: BN enabled)')
     parser.add_argument('--dropout_p', type=float, default=0.0,
@@ -325,29 +327,56 @@ def main():
     model = model_fn(num_classes=10, n_layers=args.n_layers, with_bn=(not args.no_bn), dropout_p=args.dropout_p)
 
     # Calculate noise level: force special pixel to be always correct (no noise)
-    noise_level = 0.0
+    noise_level = 0.0 if not args.no_pixel else None
 
+    pixel_mode = "No Pixel" if args.no_pixel else "With Special Pixel"
     print(f"\n{'='*80}")
-    print(f"Experiment 3: {model_name} Variable Depth")
+    print(f"Experiment 3: {model_name} Variable Depth ({pixel_mode})")
     print(f"{'='*80}")
     print(f"Architecture:     {model_name}")
     print(f"Num Layers:       {args.n_layers}")
-    print(f"Target MI:        {args.mi_bits} bits")
-    print(f"Noise Level:      {noise_level:.4f}")
+    if not args.no_pixel:
+        print(f"Target MI:        {args.mi_bits} bits")
+        print(f"Noise Level:      {noise_level:.4f}")
+    else:
+        print(f"Mode:             No special pixel")
     print(f"Seed:             {args.seed}")
     print(f"Batch Size:       {args.batch_size}")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
 
     # Load data
-    trainloader, testloader = get_cifar10_special_pixel_dataloaders(
-        batch_size=args.batch_size,
-        num_workers=4,
-        noise_level=noise_level,
-        seed=args.seed,
-        pixel_location=(args.pixel_row, args.pixel_col),
-        augment=(not args.no_augment)
-    )
+    if args.no_pixel:
+        # Use regular CIFAR10 dataloaders (no special pixel)
+        from data.data_loader import get_cifar10_transforms
+        transform_train, transform_test = get_cifar10_transforms(augment=(not args.no_augment))
+
+        import torchvision
+        from torch.utils.data import DataLoader
+
+        trainset = torchvision.datasets.CIFAR10(
+            root='./data', train=True, download=True, transform=transform_train
+        )
+        testset = torchvision.datasets.CIFAR10(
+            root='./data', train=False, download=True, transform=transform_test
+        )
+
+        trainloader = DataLoader(
+            trainset, batch_size=args.batch_size, shuffle=True, num_workers=4
+        )
+        testloader = DataLoader(
+            testset, batch_size=args.batch_size, shuffle=False, num_workers=4
+        )
+    else:
+        # Use special pixel dataloaders
+        trainloader, testloader = get_cifar10_special_pixel_dataloaders(
+            batch_size=args.batch_size,
+            num_workers=4,
+            noise_level=noise_level,
+            seed=args.seed,
+            pixel_location=(args.pixel_row, args.pixel_col),
+            augment=(not args.no_augment)
+        )
 
     # Train model with adaptive duration
     metrics = train_model_adaptive(
@@ -400,9 +429,10 @@ def main():
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Naming convention: vgg{X}var_layers{n}_seed{seed}_results.npz
+    # Naming convention: vgg{X}var_layers{n}_seed{seed}_results.npz (or _nopixel_results.npz)
     arch_num = model_name.replace('VGG', '').lower()
-    save_path = f"{args.output_dir}/vgg{arch_num}var_layers{args.n_layers}_seed{args.seed}_results.npz"
+    suffix = "_nopixel" if args.no_pixel else ""
+    save_path = f"{args.output_dir}/vgg{arch_num}var_layers{args.n_layers}_seed{args.seed}{suffix}_results.npz"
 
     np.savez(save_path, **result)
     print(f"Results saved to: {save_path}\n")
