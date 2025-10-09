@@ -194,7 +194,7 @@ def main():
                         help='Maximum number of training epochs')
     parser.add_argument('--target_train_acc', type=float, default=99.0,
                         help='Target train accuracy to stop training')
-    parser.add_argument('--initial_hidden_dim', type=int, default=10,
+    parser.add_argument('--initial_hidden_dim', type=int, default=512,
                         help='Hidden layer dimension (fixed for all layers)')
 
     args = parser.parse_args()
