@@ -17,14 +17,16 @@ class MLP_Variable(nn.Module):
     Architecture:
     - Input: 784 (28x28 flattened)
     - Hidden layers: All layers have 256 neurons
+    - Optional BatchNorm after each hidden layer
     - Output: 10 classes
 
     Args:
         num_classes (int): Number of output classes (default: 10)
         n_layers (int): Number of hidden layers (1-50)
         initial_hidden_dim (int): Hidden dimension for all layers (default: 256)
+        with_bn (bool): Whether to use BatchNorm (default: False)
     """
-    def __init__(self, num_classes=10, n_layers=3, initial_hidden_dim=256):
+    def __init__(self, num_classes=10, n_layers=3, initial_hidden_dim=256, with_bn=False):
         super(MLP_Variable, self).__init__()
 
         if n_layers < 1 or n_layers > 50:
@@ -33,6 +35,7 @@ class MLP_Variable(nn.Module):
         self.n_layers = n_layers
         self.initial_hidden_dim = initial_hidden_dim
         self.input_dim = 784  # 28x28 MNIST
+        self.with_bn = with_bn
 
         # Build the network with fixed hidden dimensions
         layers = []
@@ -40,16 +43,20 @@ class MLP_Variable(nn.Module):
         # All hidden layers have the same dimension
         hidden_dim = initial_hidden_dim
 
-        # First hidden layer: 784 -> hidden_dim
+        # First hidden layer: 784 -> hidden_dim -> (BN) -> ReLU
         layers.append(nn.Linear(self.input_dim, hidden_dim))
+        if with_bn:
+            layers.append(nn.BatchNorm1d(hidden_dim))
         layers.append(nn.ReLU(inplace=True))
 
         # Additional hidden layers with fixed dimensions
         for i in range(n_layers - 1):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
+            if with_bn:
+                layers.append(nn.BatchNorm1d(hidden_dim))
             layers.append(nn.ReLU(inplace=True))
 
-        # Output layer: hidden_dim -> num_classes
+        # Output layer: hidden_dim -> num_classes (no BN or ReLU)
         layers.append(nn.Linear(hidden_dim, num_classes))
 
         self.network = nn.Sequential(*layers)
@@ -65,6 +72,9 @@ class MLP_Variable(nn.Module):
                 nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm1d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         # Flatten input: (batch, 1, 28, 28) -> (batch, 784)
