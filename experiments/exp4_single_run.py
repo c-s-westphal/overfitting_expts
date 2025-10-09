@@ -178,7 +178,7 @@ def train_model(model, trainloader, testloader, device='cuda',
         weight_decay: Weight decay (L2 regularization)
         max_epochs: Maximum number of training epochs
         target_train_acc: Target training accuracy to stop (default: 99.0%)
-        compute_occlusion: If True, compute occlusion sensitivity at epoch 2 and final
+        compute_occlusion: If True, compute occlusion sensitivity at epoch 1 and final
 
     Returns:
         dict: Training metrics including epochs_to_99pct, accuracies, and generalization gap
@@ -197,9 +197,9 @@ def train_model(model, trainloader, testloader, device='cuda',
     best_train_acc_epoch = -1
 
     # Storage for occlusion sensitivity
-    occlusion_epoch2 = None
+    occlusion_epoch1 = None
     occlusion_final = None
-    gap_epoch2 = None
+    gap_epoch1 = None
 
     print(f"\nTraining until {target_train_acc}% train accuracy or {max_epochs} epochs...")
     pbar = tqdm(range(1, max_epochs + 1), desc="Training")
@@ -228,14 +228,14 @@ def train_model(model, trainloader, testloader, device='cuda',
         if epoch % 10 == 0:
             print(f"\nEpoch {epoch}/{max_epochs} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
 
-        # Compute occlusion sensitivity at epoch 2
-        if compute_occlusion and epoch == 2:
+        # Compute occlusion sensitivity at epoch 1
+        if compute_occlusion and epoch == 1:
             print(f"\n{'='*80}")
-            print(f"Computing occlusion sensitivity at epoch 2...")
+            print(f"Computing occlusion sensitivity at epoch 1...")
             print(f"{'='*80}")
-            occlusion_epoch2 = compute_occlusion_sensitivity(model, trainloader, criterion, device)
-            gap_epoch2 = train_acc - test_acc
-            print(f"Epoch 2 - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap_epoch2:.2f}%")
+            occlusion_epoch1 = compute_occlusion_sensitivity(model, trainloader, criterion, device)
+            gap_epoch1 = train_acc - test_acc
+            print(f"Epoch 1 - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap_epoch1:.2f}%")
             print(f"{'='*80}\n")
 
         # Check if we've reached target train accuracy
@@ -278,9 +278,9 @@ def train_model(model, trainloader, testloader, device='cuda',
         'generalization_gap': final_train_acc - final_test_acc,
         'total_epochs': len(train_accs),
         'epochs_to_99pct': epochs_to_99pct,
-        'occlusion_epoch2': occlusion_epoch2,
+        'occlusion_epoch1': occlusion_epoch1,
         'occlusion_final': occlusion_final,
-        'gap_epoch2': gap_epoch2
+        'gap_epoch1': gap_epoch1
     }
 
 
@@ -325,27 +325,8 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(args.seed)
 
-    # Calculate neurons per layer to match parameter budget
-    # Formula accounts for bias terms:
-    # 1 layer: (784+1)*N + (N+1)*10 = 795*N + 10
-    # L layers: (784+1)*Nl + (L-1)*(Nl+1)*Nl + (Nl+1)*10
-    #         = 785*Nl + (L-1)*Nl^2 + (L-1)*Nl + 10*Nl + 10
-    #         = (L-1)*Nl^2 + (794+L)*Nl + 10
-    # Setting equal: 795*N + 10 = (L-1)*Nl^2 + (794+L)*Nl + 10
-    # Simplifying: (L-1)*Nl^2 + (794+L)*Nl - 795*N = 0
-    # Nl = (-(794+L) + sqrt((794+L)^2 + 4*(L-1)*795*N)) / (2*(L-1))
-
-    N_reference = args.initial_hidden_dim
-    L = args.n_layers
-
-    if L == 1:
-        neurons_per_layer = N_reference
-    else:
-        a = L - 1
-        b = 794 + L
-        c = -795 * N_reference
-        discriminant = b**2 - 4*a*c
-        neurons_per_layer = round((-b + np.sqrt(discriminant)) / (2*a))
+    # Fixed number of neurons per layer (256) regardless of depth
+    neurons_per_layer = 256
 
     # Build model (without BatchNorm for under-parameterization study)
     model = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=neurons_per_layer,
@@ -356,13 +337,11 @@ def main():
 
     # Get hidden dims for display
     hidden_dims_str = f"{neurons_per_layer} × {args.n_layers}"
-    reference_params = 795 * N_reference + 10  # Including bias terms
 
     print(f"\n{'='*80}")
     print(f"Experiment 4: MLP Variable Depth on MNIST")
     print(f"{'='*80}")
-    print(f"Architecture:     MLP (Constant param budget)")
-    print(f"Reference:        1 layer × {N_reference} neurons = {reference_params:,} params")
+    print(f"Architecture:     MLP (Fixed 256 neurons per layer)")
     print(f"Hidden Layers:    {args.n_layers}")
     print(f"Neurons/Layer:    {neurons_per_layer}")
     print(f"Hidden Dims:      {hidden_dims_str}")
@@ -414,15 +393,15 @@ def main():
         'generalization_gap': metrics['generalization_gap'],
         'train_loss': metrics['final_train_loss'],
         'test_loss': metrics['final_test_loss'],
-        'gap_epoch2': metrics['gap_epoch2'],
+        'gap_epoch1': metrics['gap_epoch1'],
     }
 
     # Add occlusion data if available
-    if metrics['occlusion_epoch2'] is not None:
+    if metrics['occlusion_epoch1'] is not None:
         result.update({
-            'occlusion_maps_epoch2': metrics['occlusion_epoch2']['occlusion_maps'],
-            'sample_images_epoch2': metrics['occlusion_epoch2']['sample_images'],
-            'sample_labels_epoch2': metrics['occlusion_epoch2']['sample_labels'],
+            'occlusion_maps_epoch1': metrics['occlusion_epoch1']['occlusion_maps'],
+            'sample_images_epoch1': metrics['occlusion_epoch1']['sample_images'],
+            'sample_labels_epoch1': metrics['occlusion_epoch1']['sample_labels'],
         })
     if metrics['occlusion_final'] is not None:
         result.update({
@@ -504,15 +483,15 @@ def main():
         'generalization_gap': metrics_nopixel['generalization_gap'],
         'train_loss': metrics_nopixel['final_train_loss'],
         'test_loss': metrics_nopixel['final_test_loss'],
-        'gap_epoch2': metrics_nopixel['gap_epoch2'],
+        'gap_epoch1': metrics_nopixel['gap_epoch1'],
     }
 
     # Add occlusion data if available
-    if metrics_nopixel['occlusion_epoch2'] is not None:
+    if metrics_nopixel['occlusion_epoch1'] is not None:
         result_nopixel.update({
-            'occlusion_maps_epoch2': metrics_nopixel['occlusion_epoch2']['occlusion_maps'],
-            'sample_images_epoch2': metrics_nopixel['occlusion_epoch2']['sample_images'],
-            'sample_labels_epoch2': metrics_nopixel['occlusion_epoch2']['sample_labels'],
+            'occlusion_maps_epoch1': metrics_nopixel['occlusion_epoch1']['occlusion_maps'],
+            'sample_images_epoch1': metrics_nopixel['occlusion_epoch1']['sample_images'],
+            'sample_labels_epoch1': metrics_nopixel['occlusion_epoch1']['sample_labels'],
         })
     if metrics_nopixel['occlusion_final'] is not None:
         result_nopixel.update({

@@ -235,19 +235,19 @@ def plot_experiment_4():
         aggregated = aggregate_results(results)
 
         layers = results['n_layers']
-        gap_epoch2_mean = aggregated.get('gap_epoch2_mean', [None] * len(layers))
-        gap_epoch2_std = aggregated.get('gap_epoch2_std', [None] * len(layers))
+        gap_epoch1_mean = aggregated.get('gap_epoch1_mean', [None] * len(layers))
+        gap_epoch1_std = aggregated.get('gap_epoch1_std', [None] * len(layers))
         gaps_mean = aggregated['generalization_gaps_mean']
         gaps_std = aggregated['generalization_gaps_std']
         epochs_mean = aggregated.get('epochs_to_99pct_mean', [None] * len(layers))
         epochs_std = aggregated.get('epochs_to_99pct_std', [None] * len(layers))
 
-        # Collect valid data for gap at epoch 2
+        # Collect valid data for gap at epoch 1
         valid_layers_gap2 = []
         valid_gap2_mean = []
         valid_gap2_std = []
 
-        for n, gap_mean, gap_std in zip(layers, gap_epoch2_mean, gap_epoch2_std):
+        for n, gap_mean, gap_std in zip(layers, gap_epoch1_mean, gap_epoch1_std):
             if gap_mean is not None and n >= 2:
                 valid_layers_gap2.append(n)
                 valid_gap2_mean.append(gap_mean)
@@ -275,7 +275,7 @@ def plot_experiment_4():
                 valid_epochs_mean.append(epoch_mean)
                 valid_epochs_std.append(epoch_std)
 
-        # Plot gap at epoch 2 (blue)
+        # Plot gap at epoch 1 (blue)
         if valid_layers_gap2:
             ax1.errorbar(valid_layers_gap2, valid_gap2_mean, yerr=valid_gap2_std,
                          label='With Special Pixel', color='blue', marker='o', capsize=5, linewidth=2)
@@ -299,19 +299,19 @@ def plot_experiment_4():
         aggregated_nopixel = aggregate_results(results_nopixel)
 
         layers_nopixel = results_nopixel['n_layers']
-        gap_epoch2_mean_nopixel = aggregated_nopixel.get('gap_epoch2_mean', [None] * len(layers_nopixel))
-        gap_epoch2_std_nopixel = aggregated_nopixel.get('gap_epoch2_std', [None] * len(layers_nopixel))
+        gap_epoch1_mean_nopixel = aggregated_nopixel.get('gap_epoch1_mean', [None] * len(layers_nopixel))
+        gap_epoch1_std_nopixel = aggregated_nopixel.get('gap_epoch1_std', [None] * len(layers_nopixel))
         gaps_mean_nopixel = aggregated_nopixel['generalization_gaps_mean']
         gaps_std_nopixel = aggregated_nopixel['generalization_gaps_std']
         epochs_mean_nopixel = aggregated_nopixel.get('epochs_to_99pct_mean', [None] * len(layers_nopixel))
         epochs_std_nopixel = aggregated_nopixel.get('epochs_to_99pct_std', [None] * len(layers_nopixel))
 
-        # Collect valid data for gap at epoch 2
+        # Collect valid data for gap at epoch 1
         valid_layers_gap2_nopixel = []
         valid_gap2_mean_nopixel = []
         valid_gap2_std_nopixel = []
 
-        for n, gap_mean, gap_std in zip(layers_nopixel, gap_epoch2_mean_nopixel, gap_epoch2_std_nopixel):
+        for n, gap_mean, gap_std in zip(layers_nopixel, gap_epoch1_mean_nopixel, gap_epoch1_std_nopixel):
             if gap_mean is not None and n >= 2:
                 valid_layers_gap2_nopixel.append(n)
                 valid_gap2_mean_nopixel.append(gap_mean)
@@ -339,7 +339,7 @@ def plot_experiment_4():
                 valid_epochs_mean_nopixel.append(epoch_mean)
                 valid_epochs_std_nopixel.append(epoch_std)
 
-        # Plot gap at epoch 2 (red)
+        # Plot gap at epoch 1 (red)
         if valid_layers_gap2_nopixel:
             ax1.errorbar(valid_layers_gap2_nopixel, valid_gap2_mean_nopixel, yerr=valid_gap2_std_nopixel,
                          label='Without Special Pixel', color='red', marker='s', capsize=5, linewidth=2)
@@ -357,10 +357,10 @@ def plot_experiment_4():
     except FileNotFoundError:
         print(f"Results not found for MLP without pixel (exp4)")
 
-    # Configure first subplot (gap at epoch 2)
+    # Configure first subplot (gap at epoch 1)
     ax1.set_xlabel('Number of Hidden Layers', fontsize=12)
     ax1.set_ylabel('Generalization Gap (%)', fontsize=12)
-    ax1.set_title('Generalization Gap at Epoch 2', fontsize=14)
+    ax1.set_title('Generalization Gap at Epoch 1', fontsize=14)
     ax1.legend(fontsize=11)
     ax1.grid(True, alpha=0.3)
 
@@ -382,7 +382,7 @@ def plot_experiment_4():
     plt.tight_layout()
 
     os.makedirs('plots', exist_ok=True)
-    plt.savefig('plots/experiment_4_mlp_gap_and_epochs_vs_depth.png', dpi=300, bbox_inches='tight')
+    #plt.savefig('plots/experiment_4_mlp_gap_and_epochs_vs_depth.png', dpi=300, bbox_inches='tight')
     plt.close()
 
     print("Experiment 4 plot saved to plots/experiment_4_mlp_gap_and_epochs_vs_depth.png")
@@ -434,15 +434,14 @@ def plot_experiment_5():
 def plot_experiment_4_occlusion():
     """
     Plot Experiment 4 occlusion sensitivity visualization.
-    2 rows × 5 columns showing occlusion maps at epoch 2 (top) and final epoch (bottom)
+    2 rows × 5 columns showing occlusion maps at epoch 1 (top) and final epoch (bottom)
     for depths: 5, 10, 15, 20, 25 layers.
     """
     import matplotlib.gridspec as gridspec
 
     target_depths = [5, 10, 15, 20, 25]
-    target_class = 5  # Visualize digit 5
 
-    # Create figure with 2 rows (epoch2, final) and 5 columns (depths)
+    # Create figure with 2 rows (epoch1, final) and 5 columns (depths)
     fig = plt.figure(figsize=(20, 8))
     gs = gridspec.GridSpec(2, 5, figure=fig, hspace=0.3, wspace=0.3)
 
@@ -463,53 +462,53 @@ def plot_experiment_4_occlusion():
             print(f"No results found for depth {depth}")
             continue
 
-        # Collect occlusion maps across all seeds
-        epoch2_maps = []
-        final_maps = []
+        # Collect occlusion maps across all seeds AND all classes
+        epoch1_maps_all_classes = []
+        final_maps_all_classes = []
         sample_image = None
 
         for result_file in matching_files:
             data = np.load(result_file, allow_pickle=True)
 
             # Extract occlusion data
-            if 'occlusion_maps_epoch2' not in data or 'occlusion_maps_final' not in data:
+            if 'occlusion_maps_epoch1' not in data or 'occlusion_maps_final' not in data:
                 continue
 
-            occlusion_epoch2 = data['occlusion_maps_epoch2']
-            occlusion_final = data['occlusion_maps_final']
+            occlusion_epoch1 = data['occlusion_maps_epoch1']  # Shape: (10, 28, 28)
+            occlusion_final = data['occlusion_maps_final']    # Shape: (10, 28, 28)
 
-            # Get occlusion maps for target class
-            epoch2_maps.append(occlusion_epoch2[target_class])
-            final_maps.append(occlusion_final[target_class])
+            # Average across all 10 classes for this seed
+            epoch1_maps_all_classes.append(np.mean(occlusion_epoch1, axis=0))
+            final_maps_all_classes.append(np.mean(occlusion_final, axis=0))
 
-            # Use seed 0's sample image (all seeds have same first image now)
+            # Use seed 0's first sample image (class 0) just for display
             if sample_image is None and 'seed0' in result_file:
-                sample_image = data['sample_images_epoch2'][target_class]
+                sample_image = data['sample_images_epoch1'][0]
 
-        if not epoch2_maps:
+        if not epoch1_maps_all_classes:
             print(f"No occlusion data found for depth {depth}")
             continue
 
         # Use first available sample image if seed0 not found
         if sample_image is None:
             data = np.load(matching_files[0], allow_pickle=True)
-            sample_image = data['sample_images_epoch2'][target_class]
+            sample_image = data['sample_images_epoch1'][0]
 
-        # Average occlusion maps across all seeds
-        occ_map_epoch2 = np.mean(epoch2_maps, axis=0)
-        occ_map_final = np.mean(final_maps, axis=0)
+        # Average occlusion maps across all seeds (already averaged across classes)
+        occ_map_epoch1 = np.mean(epoch1_maps_all_classes, axis=0)
+        occ_map_final = np.mean(final_maps_all_classes, axis=0)
 
         # Normalize occlusion maps to [0, 1] for visualization
         # Higher values = more important
-        occ_epoch2_norm = (occ_map_epoch2 - occ_map_epoch2.min()) / (occ_map_epoch2.max() - occ_map_epoch2.min() + 1e-10)
+        occ_epoch1_norm = (occ_map_epoch1 - occ_map_epoch1.min()) / (occ_map_epoch1.max() - occ_map_epoch1.min() + 1e-10)
         occ_final_norm = (occ_map_final - occ_map_final.min()) / (occ_map_final.max() - occ_map_final.min() + 1e-10)
 
-        # Plot epoch 2 (top row)
-        ax_epoch2 = fig.add_subplot(gs[0, col_idx])
-        ax_epoch2.imshow(sample_image, cmap='gray', alpha=0.7)
-        im_epoch2 = ax_epoch2.imshow(occ_epoch2_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
-        ax_epoch2.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nEpoch 2', fontsize=10)
-        ax_epoch2.axis('off')
+        # Plot epoch 1 (top row)
+        ax_epoch1 = fig.add_subplot(gs[0, col_idx])
+        ax_epoch1.imshow(sample_image, cmap='gray', alpha=0.7)
+        im_epoch1 = ax_epoch1.imshow(occ_epoch1_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
+        ax_epoch1.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nEpoch 1', fontsize=10)
+        ax_epoch1.axis('off')
 
         # Plot final epoch (bottom row)
         ax_final = fig.add_subplot(gs[1, col_idx])
@@ -531,7 +530,7 @@ def plot_experiment_4_occlusion():
     fig.colorbar(im_final, ax=fig.get_axes(), orientation='vertical',
                  label='Occlusion Sensitivity (normalized)', shrink=0.6, pad=0.02)
 
-    fig.suptitle(f'Experiment 4: Occlusion Sensitivity for Digit {target_class}',
+    fig.suptitle(f'Experiment 4: Occlusion Sensitivity (Averaged Across All Digits)',
                  fontsize=16, y=0.98)
 
     os.makedirs('plots', exist_ok=True)
@@ -544,15 +543,14 @@ def plot_experiment_4_occlusion():
 def plot_experiment_4_occlusion_nopixel():
     """
     Plot Experiment 4 occlusion sensitivity visualization for NO PIXEL experiments.
-    2 rows × 5 columns showing occlusion maps at epoch 2 (top) and final epoch (bottom)
+    2 rows × 5 columns showing occlusion maps at epoch 1 (top) and final epoch (bottom)
     for depths: 5, 10, 15, 20, 25 layers.
     """
     import matplotlib.gridspec as gridspec
 
     target_depths = [5, 10, 15, 20, 25]
-    target_class = 5  # Visualize digit 5
 
-    # Create figure with 2 rows (epoch2, final) and 5 columns (depths)
+    # Create figure with 2 rows (epoch1, final) and 5 columns (depths)
     fig = plt.figure(figsize=(20, 8))
     gs = gridspec.GridSpec(2, 5, figure=fig, hspace=0.3, wspace=0.3)
 
@@ -572,53 +570,53 @@ def plot_experiment_4_occlusion_nopixel():
             print(f"No nopixel results found for depth {depth}")
             continue
 
-        # Collect occlusion maps across all seeds
-        epoch2_maps = []
-        final_maps = []
+        # Collect occlusion maps across all seeds AND all classes
+        epoch1_maps_all_classes = []
+        final_maps_all_classes = []
         sample_image = None
 
         for result_file in matching_files:
             data = np.load(result_file, allow_pickle=True)
 
             # Extract occlusion data
-            if 'occlusion_maps_epoch2' not in data or 'occlusion_maps_final' not in data:
+            if 'occlusion_maps_epoch1' not in data or 'occlusion_maps_final' not in data:
                 continue
 
-            occlusion_epoch2 = data['occlusion_maps_epoch2']
-            occlusion_final = data['occlusion_maps_final']
+            occlusion_epoch1 = data['occlusion_maps_epoch1']  # Shape: (10, 28, 28)
+            occlusion_final = data['occlusion_maps_final']    # Shape: (10, 28, 28)
 
-            # Get occlusion maps for target class
-            epoch2_maps.append(occlusion_epoch2[target_class])
-            final_maps.append(occlusion_final[target_class])
+            # Average across all 10 classes for this seed
+            epoch1_maps_all_classes.append(np.mean(occlusion_epoch1, axis=0))
+            final_maps_all_classes.append(np.mean(occlusion_final, axis=0))
 
-            # Use seed 0's sample image (all seeds have same first image now)
+            # Use seed 0's first sample image (class 0) just for display
             if sample_image is None and 'seed0' in result_file:
-                sample_image = data['sample_images_epoch2'][target_class]
+                sample_image = data['sample_images_epoch1'][0]
 
-        if not epoch2_maps:
+        if not epoch1_maps_all_classes:
             print(f"No nopixel occlusion data found for depth {depth}")
             continue
 
         # Use first available sample image if seed0 not found
         if sample_image is None:
             data = np.load(matching_files[0], allow_pickle=True)
-            sample_image = data['sample_images_epoch2'][target_class]
+            sample_image = data['sample_images_epoch1'][0]
 
-        # Average occlusion maps across all seeds
-        occ_map_epoch2 = np.mean(epoch2_maps, axis=0)
-        occ_map_final = np.mean(final_maps, axis=0)
+        # Average occlusion maps across all seeds (already averaged across classes)
+        occ_map_epoch1 = np.mean(epoch1_maps_all_classes, axis=0)
+        occ_map_final = np.mean(final_maps_all_classes, axis=0)
 
         # Normalize occlusion maps to [0, 1] for visualization
         # Higher values = more important
-        occ_epoch2_norm = (occ_map_epoch2 - occ_map_epoch2.min()) / (occ_map_epoch2.max() - occ_map_epoch2.min() + 1e-10)
+        occ_epoch1_norm = (occ_map_epoch1 - occ_map_epoch1.min()) / (occ_map_epoch1.max() - occ_map_epoch1.min() + 1e-10)
         occ_final_norm = (occ_map_final - occ_map_final.min()) / (occ_map_final.max() - occ_map_final.min() + 1e-10)
 
-        # Plot epoch 2 (top row)
-        ax_epoch2 = fig.add_subplot(gs[0, col_idx])
-        ax_epoch2.imshow(sample_image, cmap='gray', alpha=0.7)
-        im_epoch2 = ax_epoch2.imshow(occ_epoch2_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
-        ax_epoch2.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nEpoch 2', fontsize=10)
-        ax_epoch2.axis('off')
+        # Plot epoch 1 (top row)
+        ax_epoch1 = fig.add_subplot(gs[0, col_idx])
+        ax_epoch1.imshow(sample_image, cmap='gray', alpha=0.7)
+        im_epoch1 = ax_epoch1.imshow(occ_epoch1_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
+        ax_epoch1.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nEpoch 1', fontsize=10)
+        ax_epoch1.axis('off')
 
         # Plot final epoch (bottom row)
         ax_final = fig.add_subplot(gs[1, col_idx])
@@ -640,7 +638,7 @@ def plot_experiment_4_occlusion_nopixel():
     fig.colorbar(im_final, ax=fig.get_axes(), orientation='vertical',
                  label='Occlusion Sensitivity (normalized)', shrink=0.6, pad=0.02)
 
-    fig.suptitle(f'Experiment 4: Occlusion Sensitivity for Digit {target_class} (No Special Pixel)',
+    fig.suptitle('Experiment 4: Occlusion Sensitivity Averaged Across All Digits (No Special Pixel)',
                  fontsize=16, y=0.98)
 
     os.makedirs('plots', exist_ok=True)

@@ -23,7 +23,7 @@ def load_experiment_results(experiment_type, model_name):
 def aggregate_results(results_dict):
     aggregated = {}
 
-    for key in ['train_accs', 'test_accs', 'generalization_gaps', 'train_losses', 'test_losses', 'epochs_to_100pct', 'epochs_to_99pct', 'gap_epoch2']:
+    for key in ['train_accs', 'test_accs', 'generalization_gaps', 'train_losses', 'test_losses', 'epochs_to_100pct', 'epochs_to_99pct', 'gap_epoch1']:
         if key in results_dict:
             data = results_dict[key]
             means = []
@@ -405,6 +405,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4', include_nopixel=
     train_losses = []
     test_losses = []
     epochs_to_99pct = []
+    gap_epoch1 = []
     valid_results = []
 
     for n_layers in n_layers_list:
@@ -414,6 +415,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4', include_nopixel=
         layers_train_losses = []
         layers_test_losses = []
         layers_epochs_to_99pct = []
+        layers_gap_epoch1 = []
         layers_valid = []
 
         seeds_for_layers = sorted(layers_to_seeds[n_layers])
@@ -445,6 +447,12 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4', include_nopixel=
             else:
                 layers_epochs_to_99pct.append(None)
 
+            # Load gap_epoch1 if available
+            if 'gap_epoch1' in data:
+                layers_gap_epoch1.append(float(data['gap_epoch1']))
+            else:
+                layers_gap_epoch1.append(None)
+
             layers_valid.append(is_valid)
 
         train_accs.append(layers_train_accs)
@@ -453,6 +461,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4', include_nopixel=
         train_losses.append(layers_train_losses)
         test_losses.append(layers_test_losses)
         epochs_to_99pct.append(layers_epochs_to_99pct)
+        gap_epoch1.append(layers_gap_epoch1)
         valid_results.append(layers_valid)
 
     return {
@@ -465,6 +474,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4', include_nopixel=
         'train_losses': train_losses,
         'test_losses': test_losses,
         'epochs_to_99pct': epochs_to_99pct,
+        'gap_epoch1': gap_epoch1,
         'valid_results': valid_results,
     }
 
