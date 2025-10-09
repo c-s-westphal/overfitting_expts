@@ -454,7 +454,7 @@ def plot_experiment_4_occlusion():
 
     # Try to load results for each target depth
     for col_idx, depth in enumerate(target_depths):
-        # Try to find a result file for this depth (any seed)
+        # Try to find all result files for this depth (all seeds)
         file_pattern = f"mlp_layers{depth}_seed*_results.npz"
         import glob
         matching_files = glob.glob(os.path.join(results_dir, f"mlp_layers{depth}_seed*_results.npz"))
@@ -463,22 +463,36 @@ def plot_experiment_4_occlusion():
             print(f"No results found for depth {depth}")
             continue
 
-        # Load first matching file
-        result_file = matching_files[0]
-        data = np.load(result_file, allow_pickle=True)
+        # Collect occlusion maps across all seeds
+        epoch2_maps = []
+        final_maps = []
+        sample_image = None
 
-        # Extract occlusion data
-        if 'occlusion_maps_epoch2' not in data or 'occlusion_maps_final' not in data:
+        for result_file in matching_files:
+            data = np.load(result_file, allow_pickle=True)
+
+            # Extract occlusion data
+            if 'occlusion_maps_epoch2' not in data or 'occlusion_maps_final' not in data:
+                continue
+
+            occlusion_epoch2 = data['occlusion_maps_epoch2']
+            occlusion_final = data['occlusion_maps_final']
+
+            # Get occlusion maps for target class
+            epoch2_maps.append(occlusion_epoch2[target_class])
+            final_maps.append(occlusion_final[target_class])
+
+            # Use first seed's sample image
+            if sample_image is None:
+                sample_image = data['sample_images_epoch2'][target_class]
+
+        if not epoch2_maps:
             print(f"No occlusion data found for depth {depth}")
             continue
 
-        occlusion_epoch2 = data['occlusion_maps_epoch2']
-        occlusion_final = data['occlusion_maps_final']
-        sample_image = data['sample_images_epoch2'][target_class]  # Same image for both epochs
-
-        # Get occlusion maps for target class
-        occ_map_epoch2 = occlusion_epoch2[target_class]
-        occ_map_final = occlusion_final[target_class]
+        # Average occlusion maps across all seeds
+        occ_map_epoch2 = np.mean(epoch2_maps, axis=0)
+        occ_map_final = np.mean(final_maps, axis=0)
 
         # Normalize occlusion maps to [0, 1] for visualization
         # Higher values = more important
