@@ -26,41 +26,20 @@ def noise_for_target_mi(target_mi_bits, num_classes=10):
     return float(noise)
 
 
-def train_epoch(model, dataloader, criterion, optimizer, device,
-                log_gradients=False, grad_monitor_epochs=10, epoch_index=1,
-                monitor_every_n_batches=50):
-    """Train for one epoch with optional gradient monitoring."""
+def train_epoch(model, dataloader, criterion, optimizer, device):
+    """Train for one epoch."""
     model.train()
     running_loss = 0.0
     correct = 0
     total = 0
 
-    for batch_index, (inputs, labels) in enumerate(dataloader, start=1):
+    for inputs, labels in dataloader:
         inputs, labels = inputs.to(device), labels.to(device)
 
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
-
-        # Optional gradient monitoring for early epochs
-        if log_gradients and epoch_index <= grad_monitor_epochs and (batch_index % monitor_every_n_batches == 0 or batch_index == 1):
-            with torch.no_grad():
-                total_grad_norm = 0.0
-                first_last = {}
-                for name, p in model.named_parameters():
-                    if p.grad is None:
-                        continue
-                    param_norm = p.grad.data.norm(2).item()
-                    total_grad_norm += param_norm ** 2
-                    # Track a few key layers
-                    if any(key in name for key in ('.0.weight', '.2.weight', 'classifier.0.weight', 'classifier.1.weight', 'classifier.2.weight')):
-                        first_last[name] = param_norm
-                total_grad_norm = total_grad_norm ** 0.5
-                print(f"[GradMon] epoch={epoch_index} batch={batch_index} total_grad_L2={total_grad_norm:.4e}")
-                for k, v in first_last.items():
-                    print(f"  - {k}: {v:.4e}")
-
         optimizer.step()
 
         running_loss += loss.item()
@@ -92,39 +71,116 @@ def evaluate(model, dataloader, criterion, device):
     return running_loss / len(dataloader), 100. * correct / total
 
 
-def get_lr_for_epoch(epoch):
-    """Get learning rate for given epoch (1-indexed).
-
-    Fixed learning rate (no scheduling).
+def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples_per_class=100):
     """
-    return 0.001
+    Compute occlusion sensitivity maps for CIFAR10 train set.
 
+    For each class, takes the first samples_per_class images (deterministic across seeds)
+    and computes occlusion sensitivity by measuring increase in loss when each pixel is occluded.
+    Uses efficient batching: for each pixel position, creates batch of all images with that pixel occluded.
+    Returns averaged occlusion map per class.
 
-def train_model_adaptive(model, trainloader, testloader, device='cuda',
-                         base_lr=0.001, weight_decay=5e-4, optimizer_type='adam',
-                         warmup_epochs=0, log_gradients=False, grad_monitor_epochs=10,
-                         log_activations=False, act_monitor_epochs=10, monitor_every_n_batches=50,
-                         initial_epochs=200, max_epochs=500):
-    """
-    Train model until it reaches 99.99% train accuracy or max_epochs.
-
-    Stops immediately when train_acc >= 99.99%. Tracks epochs_to_100pct.
-    If 99.99% is never reached, saves best train_acc and corresponding test_acc.
-    Fixed learning rate (no scheduling).
+    Args:
+        model: Trained model
+        trainloader: Training data loader
+        criterion: Loss function
+        device: Device to compute on
+        samples_per_class: Number of first samples per class to average over (default: 100)
 
     Returns:
-        dict: Training metrics including epochs_to_100pct, accuracies, and generalization gap
+        dict with:
+            - 'occlusion_maps': np.array of shape (10, 32, 32) - averaged maps per class
+            - 'sample_images': np.array of shape (10, 3, 32, 32) - first image per class
+            - 'sample_labels': np.array of shape (10,) - labels for sample images
+    """
+    model.eval()
+
+    # Collect first samples_per_class images per class (deterministic)
+    class_samples = {i: [] for i in range(10)}
+    class_labels = {i: [] for i in range(10)}
+
+    with torch.no_grad():
+        for inputs, labels in trainloader:
+            for i in range(len(labels)):
+                label = labels[i].item()
+                if len(class_samples[label]) < samples_per_class:
+                    class_samples[label].append(inputs[i])
+                    class_labels[label].append(label)
+
+            # Check if we have enough samples for all classes
+            if all(len(class_samples[c]) >= samples_per_class for c in range(10)):
+                break
+
+    occlusion_maps = np.zeros((10, 32, 32))
+    sample_images = np.zeros((10, 3, 32, 32))
+
+    print("\nComputing occlusion sensitivity maps...")
+    for class_idx in tqdm(range(10), desc="Classes", leave=False):
+        # Stack all images for this class into a batch
+        images_batch = torch.stack(class_samples[class_idx]).to(device)  # Shape: (100, 3, 32, 32)
+        labels_batch = torch.tensor(class_labels[class_idx]).to(device)  # Shape: (100,)
+        n_samples = images_batch.shape[0]
+
+        # Get baseline losses for all images
+        with torch.no_grad():
+            outputs = model(images_batch)
+            baseline_losses = torch.nn.functional.cross_entropy(outputs, labels_batch, reduction='none')
+            baseline_losses = baseline_losses.cpu().numpy()  # Shape: (100,)
+
+        # For each pixel position, occlude that pixel in all images and compute loss
+        occlusion_map = np.zeros((32, 32))
+
+        for pixel_idx in tqdm(range(32 * 32), desc=f"Class {class_idx}", leave=False):
+            row = pixel_idx // 32
+            col = pixel_idx % 32
+
+            # Clone batch and occlude the pixel (set all 3 RGB channels to 0)
+            occluded_batch = images_batch.clone()
+            occluded_batch[:, :, row, col] = 0  # Occlude all 3 channels
+
+            # Compute losses for occluded versions
+            with torch.no_grad():
+                outputs = model(occluded_batch)
+                occluded_losses = torch.nn.functional.cross_entropy(outputs, labels_batch, reduction='none')
+                occluded_losses = occluded_losses.cpu().numpy()  # Shape: (100,)
+
+            # Average loss increase across all samples
+            loss_increase = occluded_losses - baseline_losses
+            occlusion_map[row, col] = np.mean(loss_increase)
+
+        occlusion_maps[class_idx] = occlusion_map
+        sample_images[class_idx] = class_samples[class_idx][0].cpu().numpy()
+
+    return {
+        'occlusion_maps': occlusion_maps,
+        'sample_images': sample_images,
+        'sample_labels': np.arange(10)
+    }
+
+
+def train_model(model, trainloader, testloader, device='cuda',
+                lr=0.001, weight_decay=5e-4, max_epochs=200, target_train_acc=99.99,
+                compute_occlusion=False):
+    """
+    Train model for max_epochs with AdamW optimizer (no early stopping, but tracks when target is reached).
+
+    Args:
+        model: The VGG model to train
+        trainloader: Training data loader
+        testloader: Test data loader
+        device: Device to train on (cuda or cpu)
+        lr: Learning rate for AdamW
+        weight_decay: Weight decay
+        max_epochs: Maximum number of training epochs
+        target_train_acc: Target train accuracy to track (default: 99.99%)
+        compute_occlusion: If True, compute occlusion sensitivity at epoch 1 and final
+
+    Returns:
+        dict: Training metrics
     """
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
-    if optimizer_type == 'sgd':
-        optimizer = optim.SGD(model.parameters(), lr=base_lr, momentum=0.9, weight_decay=weight_decay)
-    elif optimizer_type == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=base_lr, weight_decay=weight_decay)
-    elif optimizer_type == 'adamw':
-        optimizer = optim.AdamW(model.parameters(), lr=base_lr, weight_decay=weight_decay)
-    else:
-        raise ValueError(f"Unsupported optimizer_type: {optimizer_type}")
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     train_losses = []
     train_accs = []
@@ -132,53 +188,15 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
     test_accs = []
 
     epochs_to_100pct = -1
-    best_train_acc = 0.0
-    best_train_acc_epoch = -1
+    occlusion_epoch1 = None
+    occlusion_final = None
+    gap_epoch1 = None
 
-    print(f"\nTraining until 99.99% train accuracy or {max_epochs} epochs...")
+    print(f"\nTraining for {max_epochs} epochs (tracking when {target_train_acc}% train accuracy is reached)...")
     pbar = tqdm(range(1, max_epochs + 1), desc="Training")
 
-    # Optional activation monitoring via forward hooks
-    hooks = []
-    activation_stats = {}
-    if log_activations:
-        def make_hook(name):
-            def hook_fn(module, inp, out):
-                with torch.no_grad():
-                    if isinstance(out, tuple):
-                        tensor = out[0]
-                    else:
-                        tensor = out
-                    tensor = tensor.detach()
-                    zero_frac = (tensor <= 0).float().mean().item()
-                    mean_val = tensor.mean().item()
-                    std_val = tensor.std(unbiased=False).item()
-                    activation_stats.setdefault(name, []).append((zero_frac, mean_val, std_val))
-            return hook_fn
-        # Attach to ReLU activations to detect dying ReLUs
-        for name, module in model.named_modules():
-            if isinstance(module, nn.ReLU):
-                hooks.append(module.register_forward_hook(make_hook(name)))
-
     for epoch in pbar:
-        # Update learning rate based on current epoch with optional warmup
-        scheduled_lr = get_lr_for_epoch(epoch)
-        warmup_factor = 1.0
-        if warmup_epochs > 0 and epoch <= warmup_epochs:
-            warmup_factor = float(epoch) / float(max(1, warmup_epochs))
-        current_lr = scheduled_lr * warmup_factor
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = current_lr
-
-        # Clear activation stats at start of epoch for logging window
-        if log_activations and epoch <= act_monitor_epochs:
-            activation_stats.clear()
-
-        train_loss, train_acc = train_epoch(
-            model, trainloader, criterion, optimizer, device,
-            log_gradients=log_gradients, grad_monitor_epochs=grad_monitor_epochs,
-            epoch_index=epoch, monitor_every_n_batches=monitor_every_n_batches
-        )
+        train_loss, train_acc = train_epoch(model, trainloader, criterion, optimizer, device)
         test_loss, test_acc = evaluate(model, testloader, criterion, device)
 
         train_losses.append(train_loss)
@@ -186,57 +204,44 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
         test_losses.append(test_loss)
         test_accs.append(test_acc)
 
-        # Track best train accuracy
-        if train_acc > best_train_acc:
-            best_train_acc = train_acc
-            best_train_acc_epoch = epoch - 1  # 0-indexed for list access
-
         pbar.set_postfix({
             'Epoch': epoch,
-            'LR': current_lr,
             'Train Acc': f'{train_acc:.2f}%',
             'Test Acc': f'{test_acc:.2f}%'
         })
 
         # Print progress every 10 epochs
         if epoch % 10 == 0:
-            print(f"\nEpoch {epoch}/{max_epochs} | LR: {current_lr} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
+            print(f"\nEpoch {epoch}/{max_epochs} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
 
-        # Print activation stats for early epochs
-        if log_activations and epoch <= act_monitor_epochs:
-            # Aggregate per-layer stats across batches in this epoch
-            print(f"[ActMon] epoch={epoch} stats for ReLU activations (zero_frac, mean, std)")
-            for name, records in activation_stats.items():
-                if not records:
-                    continue
-                zf = np.mean([r[0] for r in records])
-                mv = np.mean([r[1] for r in records])
-                sv = np.mean([r[2] for r in records])
-                print(f"  - {name}: zero_frac={zf:.3f}, mean={mv:.4f}, std={sv:.4f}")
+        # Compute occlusion sensitivity at epoch 1
+        if compute_occlusion and epoch == 1:
+            print(f"\n{'='*80}")
+            print(f"Computing occlusion sensitivity at epoch 1...")
+            print(f"{'='*80}")
+            occlusion_epoch1 = compute_occlusion_sensitivity(model, trainloader, criterion, device)
+            gap_epoch1 = train_acc - test_acc
+            print(f"Epoch 1 - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap_epoch1:.2f}%")
+            print(f"{'='*80}\n")
 
-        # Check if we've reached 99.99% train accuracy
-        if train_acc >= 99.99:
+        # Track when we reach target train accuracy (but don't stop training)
+        if train_acc >= target_train_acc and epochs_to_100pct == -1:
             epochs_to_100pct = epoch
-            print(f"\nReached 99.99% train accuracy at epoch {epoch}. Stopping training.")
-            break
+            print(f"\nReached target train accuracy {target_train_acc}% at epoch {epoch}. Continuing training...")
 
-    # Determine final metrics
-    if epochs_to_100pct != -1:
-        # We reached 99.99%, use final epoch metrics
-        final_train_acc = train_accs[-1]
-        final_test_acc = test_accs[-1]
-        final_train_loss = train_losses[-1]
-        final_test_loss = test_losses[-1]
-    else:
-        # Never reached 99.99%, use best train_acc epoch
-        final_train_acc = train_accs[best_train_acc_epoch]
-        final_test_acc = test_accs[best_train_acc_epoch]
-        final_train_loss = train_losses[best_train_acc_epoch]
-        final_test_loss = test_losses[best_train_acc_epoch]
+    # Always use final epoch metrics (no early stopping)
+    final_train_acc = train_accs[-1]
+    final_test_acc = test_accs[-1]
+    final_train_loss = train_losses[-1]
+    final_test_loss = test_losses[-1]
 
-    # Remove hooks
-    for h in hooks:
-        h.remove()
+    # Compute occlusion sensitivity at final epoch
+    if compute_occlusion:
+        print(f"\n{'='*80}")
+        print(f"Computing occlusion sensitivity at final epoch...")
+        print(f"{'='*80}")
+        occlusion_final = compute_occlusion_sensitivity(model, trainloader, criterion, device)
+        print(f"{'='*80}\n")
 
     return {
         'train_losses': train_losses,
@@ -249,7 +254,10 @@ def train_model_adaptive(model, trainloader, testloader, device='cuda',
         'final_test_acc': final_test_acc,
         'generalization_gap': final_train_acc - final_test_acc,
         'total_epochs': len(train_accs),
-        'epochs_to_100pct': epochs_to_100pct
+        'epochs_to_100pct': epochs_to_100pct,
+        'occlusion_epoch1': occlusion_epoch1,
+        'occlusion_final': occlusion_final,
+        'gap_epoch1': gap_epoch1
     }
 
 
@@ -284,28 +292,14 @@ def main():
                         help='Disable BatchNorm in variable VGG (default: BN enabled)')
     parser.add_argument('--dropout_p', type=float, default=0.0,
                         help='Dropout probability in classifier')
-    parser.add_argument('--optimizer', type=str, default='adam', choices=['sgd', 'adam', 'adamw'],
-                        help='Optimizer type')
+    parser.add_argument('--lr', type=float, default=0.001,
+                        help='Learning rate for AdamW')
     parser.add_argument('--weight_decay', type=float, default=5e-4,
                         help='Weight decay')
-    parser.add_argument('--base_lr', type=float, default=0.001,
-                        help='Base learning rate')
-    parser.add_argument('--warmup_epochs', type=int, default=0,
-                        help='Number of LR warmup epochs')
-    parser.add_argument('--log_gradients', action='store_true',
-                        help='Log gradient norms in early epochs')
-    parser.add_argument('--grad_monitor_epochs', type=int, default=10,
-                        help='Number of epochs to log gradient norms')
-    parser.add_argument('--log_activations', action='store_true',
-                        help='Log activation zero fraction/mean/std in early epochs')
-    parser.add_argument('--act_monitor_epochs', type=int, default=10,
-                        help='Number of epochs to log activation stats')
-    parser.add_argument('--monitor_every_n_batches', type=int, default=50,
-                        help='How often to log per-epoch monitors (in batches)')
-    parser.add_argument('--initial_epochs', type=int, default=200,
-                        help='Initial training epochs before optional extension')
-    parser.add_argument('--max_epochs', type=int, default=500,
-                        help='Maximum epochs if train acc < 99% after initial epochs')
+    parser.add_argument('--max_epochs', type=int, default=200,
+                        help='Maximum number of training epochs')
+    parser.add_argument('--target_train_acc', type=float, default=99.99,
+                        help='Target train accuracy to track')
 
     args = parser.parse_args()
 
@@ -342,6 +336,7 @@ def main():
         print(f"Mode:             No special pixel")
     print(f"Seed:             {args.seed}")
     print(f"Batch Size:       {args.batch_size}")
+    print(f"Max Epochs:       {args.max_epochs}")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
 
@@ -378,14 +373,12 @@ def main():
             augment=(not args.no_augment)
         )
 
-    # Train model with adaptive duration
-    metrics = train_model_adaptive(
+    # Train model
+    metrics = train_model(
         model, trainloader, testloader, device=args.device,
-        base_lr=args.base_lr, weight_decay=args.weight_decay, optimizer_type=args.optimizer,
-        warmup_epochs=args.warmup_epochs, log_gradients=args.log_gradients,
-        grad_monitor_epochs=args.grad_monitor_epochs, log_activations=args.log_activations,
-        act_monitor_epochs=args.act_monitor_epochs, monitor_every_n_batches=args.monitor_every_n_batches,
-        initial_epochs=args.initial_epochs, max_epochs=args.max_epochs
+        lr=args.lr, weight_decay=args.weight_decay,
+        max_epochs=args.max_epochs, target_train_acc=args.target_train_acc,
+        compute_occlusion=True
     )
 
     # Prepare results
@@ -404,8 +397,20 @@ def main():
         'generalization_gap': metrics['generalization_gap'],
         'train_loss': metrics['final_train_loss'],
         'test_loss': metrics['final_test_loss'],
-        'total_epochs': metrics['total_epochs']
+        'total_epochs': metrics['total_epochs'],
+        'gap_epoch1': metrics['gap_epoch1'],
     }
+
+    # Add occlusion data if available
+    if metrics['occlusion_epoch1'] is not None:
+        result.update({
+            'occlusion_maps_epoch1': metrics['occlusion_epoch1']['occlusion_maps'],
+            'sample_images_epoch1': metrics['occlusion_epoch1']['sample_images'],
+            'sample_labels_epoch1': metrics['occlusion_epoch1']['sample_labels'],
+            'occlusion_maps_final': metrics['occlusion_final']['occlusion_maps'],
+            'sample_images_final': metrics['occlusion_final']['sample_images'],
+            'sample_labels_final': metrics['occlusion_final']['sample_labels'],
+        })
 
     if is_valid:
         print(f"\n{'='*80}")
