@@ -16,7 +16,7 @@ from tqdm import tqdm
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.mlp_variable import MLP_Variable
-from data.data_loader import get_mnist_special_pixel_dataloaders
+from data.data_loader import get_mnist_special_pixel_dataloaders, get_mnist_dataloaders
 
 
 def noise_for_target_mi(target_mi_bits, num_classes=10):
@@ -296,6 +296,75 @@ def main():
 
     np.savez(save_path, **result)
     print(f"Results saved to: {save_path}\n")
+
+    # =========================================================================
+    # EXPERIMENT 2: Train WITHOUT special pixel
+    # =========================================================================
+    print(f"\n{'='*80}")
+    print(f"Starting Experiment WITHOUT Special Pixel")
+    print(f"{'='*80}\n")
+
+    # Build new model (fresh initialization)
+    model_nopixel = MLP_Variable(num_classes=10, n_layers=args.n_layers, initial_hidden_dim=args.initial_hidden_dim)
+
+    # Load data WITHOUT special pixel
+    trainloader_nopixel, testloader_nopixel = get_mnist_dataloaders(
+        batch_size=args.batch_size,
+        num_workers=4,
+        augment=(not args.no_augment)
+    )
+
+    # Train model without special pixel
+    metrics_nopixel = train_model(
+        model_nopixel, trainloader_nopixel, testloader_nopixel, device=args.device,
+        lr=args.lr, weight_decay=args.weight_decay,
+        max_epochs=args.max_epochs, target_train_acc=args.target_train_acc
+    )
+
+    # Prepare results for no-pixel version
+    is_valid_nopixel = metrics_nopixel['final_train_acc'] >= args.target_train_acc
+
+    result_nopixel = {
+        'model': 'MLP',
+        'n_layers': args.n_layers,
+        'hidden_dim': model_nopixel.hidden_dim,
+        'noise_level': None,  # No special pixel
+        'mi_bits': None,  # No special pixel
+        'seed': args.seed,
+        'valid': is_valid_nopixel,
+        'epochs_to_99pct': metrics_nopixel['epochs_to_99pct'],
+        'total_epochs': metrics_nopixel['total_epochs'],
+        'num_parameters': model_nopixel.count_parameters(),
+        'train_acc': metrics_nopixel['final_train_acc'],
+        'test_acc': metrics_nopixel['final_test_acc'],
+        'generalization_gap': metrics_nopixel['generalization_gap'],
+        'train_loss': metrics_nopixel['final_train_loss'],
+        'test_loss': metrics_nopixel['final_test_loss'],
+    }
+
+    if is_valid_nopixel:
+        print(f"\n{'='*80}")
+        print(f"Training Complete (No Pixel - Valid - Reached {args.target_train_acc}%)")
+        print(f"{'='*80}")
+        print(f"Epochs to {args.target_train_acc}%: {metrics_nopixel['epochs_to_99pct']}")
+        print(f"Train Accuracy:   {metrics_nopixel['final_train_acc']:.2f}%")
+        print(f"Test Accuracy:    {metrics_nopixel['final_test_acc']:.2f}%")
+        print(f"Gen. Gap:         {metrics_nopixel['generalization_gap']:.2f}%")
+        print(f"{'='*80}\n")
+    else:
+        print(f"\n{'='*80}")
+        print(f"Training Complete (No Pixel - Invalid - Did Not Reach {args.target_train_acc}%)")
+        print(f"{'='*80}")
+        print(f"Total Epochs:     {metrics_nopixel['total_epochs']}")
+        print(f"Best Train Acc:   {metrics_nopixel['final_train_acc']:.2f}%")
+        print(f"Test Acc at Best: {metrics_nopixel['final_test_acc']:.2f}%")
+        print(f"Gen. Gap:         {metrics_nopixel['generalization_gap']:.2f}%")
+        print(f"{'='*80}\n")
+
+    # Save no-pixel results
+    save_path_nopixel = f"{args.output_dir}/mlp_layers{args.n_layers}_seed{args.seed}_nopixel_results.npz"
+    np.savez(save_path_nopixel, **result_nopixel)
+    print(f"No-pixel results saved to: {save_path_nopixel}\n")
 
 
 if __name__ == "__main__":

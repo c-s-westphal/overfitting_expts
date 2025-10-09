@@ -367,16 +367,18 @@ def load_exp3_results_from_per_seed(model_name, results_dir='results/exp3'):
     }
 
 
-def load_exp4_results_from_per_seed(results_dir='results/exp4'):
+def load_exp4_results_from_per_seed(results_dir='results/exp4', include_nopixel=False):
     """Aggregate per-seed exp4 results on the fly for MLP Variable.
 
     Expects files named like: "mlp_layers{n}_seed{seed}_results.npz".
+    If include_nopixel=True, also loads "mlp_layers{n}_seed{seed}_nopixel_results.npz".
     Returns a dict compatible with aggregate_results, including 'n_layers'.
     """
     if not os.path.isdir(results_dir):
         raise FileNotFoundError(f"Results directory not found: {results_dir}")
 
-    file_pattern = re.compile(r"^mlp_layers(\d+)_seed(\d+)_results\.npz$")
+    suffix = "_nopixel" if include_nopixel else ""
+    file_pattern = re.compile(rf"^mlp_layers(\d+)_seed(\d+){re.escape(suffix)}_results\.npz$")
 
     layers_to_seeds = {}
     for fname in os.listdir(results_dir):
@@ -389,7 +391,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
 
     if not layers_to_seeds:
         raise FileNotFoundError(
-            f"No per-seed results found for MLP in {results_dir}"
+            f"No per-seed results found for MLP{suffix} in {results_dir}"
         )
 
     n_layers_list = sorted(layers_to_seeds.keys())
@@ -415,7 +417,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
         seeds_for_layers = sorted(layers_to_seeds[n_layers])
         for seed in seeds_for_layers:
             fpath = os.path.join(
-                results_dir, f"mlp_layers{n_layers}_seed{seed}_results.npz"
+                results_dir, f"mlp_layers{n_layers}_seed{seed}{suffix}_results.npz"
             )
             if not os.path.exists(fpath):
                 continue
@@ -452,7 +454,7 @@ def load_exp4_results_from_per_seed(results_dir='results/exp4'):
         valid_results.append(layers_valid)
 
     return {
-        'model': 'MLP',
+        'model': 'MLP' + (' (No Pixel)' if include_nopixel else ''),
         'n_layers': n_layers_list,
         'seeds': all_seeds_sorted,
         'train_accs': train_accs,
