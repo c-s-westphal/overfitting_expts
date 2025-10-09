@@ -498,22 +498,31 @@ def plot_experiment_4_occlusion():
         occ_map_epoch1 = np.mean(epoch1_maps_all_classes, axis=0)
         occ_map_final = np.mean(final_maps_all_classes, axis=0)
 
-        # Normalize occlusion maps to [0, 1] for visualization
+        # Apply power transform to compress dynamic range (reduces dominance of extreme values)
+        # Then normalize to [0, 1] using min-max
         # Higher values = more important
-        occ_epoch1_norm = (occ_map_epoch1 - occ_map_epoch1.min()) / (occ_map_epoch1.max() - occ_map_epoch1.min() + 1e-10)
-        occ_final_norm = (occ_map_final - occ_map_final.min()) / (occ_map_final.max() - occ_map_final.min() + 1e-10)
+        power = 0.5  # Square root transform
+
+        # Shift to non-negative before power transform (to avoid NaN from negative values)
+        occ_epoch1_shifted = occ_map_epoch1 - occ_map_epoch1.min()
+        occ_epoch1_transformed = occ_epoch1_shifted ** power
+        occ_epoch1_norm = (occ_epoch1_transformed - occ_epoch1_transformed.min()) / (occ_epoch1_transformed.max() - occ_epoch1_transformed.min() + 1e-10)
+
+        occ_final_shifted = occ_map_final - occ_map_final.min()
+        occ_final_transformed = occ_final_shifted ** power
+        occ_final_norm = (occ_final_transformed - occ_final_transformed.min()) / (occ_final_transformed.max() - occ_final_transformed.min() + 1e-10)
 
         # Plot epoch 1 (top row)
         ax_epoch1 = fig.add_subplot(gs[0, col_idx])
         ax_epoch1.imshow(sample_image, cmap='gray', alpha=0.7)
-        im_epoch1 = ax_epoch1.imshow(occ_epoch1_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
+        im_epoch1 = ax_epoch1.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
         ax_epoch1.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nEpoch 1', fontsize=10)
         ax_epoch1.axis('off')
 
         # Plot final epoch (bottom row)
         ax_final = fig.add_subplot(gs[1, col_idx])
         ax_final.imshow(sample_image, cmap='gray', alpha=0.7)
-        im_final = ax_final.imshow(occ_final_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
+        im_final = ax_final.imshow(occ_final_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
         ax_final.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nFinal Epoch', fontsize=10)
         ax_final.axis('off')
 
@@ -606,22 +615,31 @@ def plot_experiment_4_occlusion_nopixel():
         occ_map_epoch1 = np.mean(epoch1_maps_all_classes, axis=0)
         occ_map_final = np.mean(final_maps_all_classes, axis=0)
 
-        # Normalize occlusion maps to [0, 1] for visualization
+        # Apply power transform to compress dynamic range (reduces dominance of extreme values)
+        # Then normalize to [0, 1] using min-max
         # Higher values = more important
-        occ_epoch1_norm = (occ_map_epoch1 - occ_map_epoch1.min()) / (occ_map_epoch1.max() - occ_map_epoch1.min() + 1e-10)
-        occ_final_norm = (occ_map_final - occ_map_final.min()) / (occ_map_final.max() - occ_map_final.min() + 1e-10)
+        power = 0.5  # Square root transform
+
+        # Shift to non-negative before power transform (to avoid NaN from negative values)
+        occ_epoch1_shifted = occ_map_epoch1 - occ_map_epoch1.min()
+        occ_epoch1_transformed = occ_epoch1_shifted ** power
+        occ_epoch1_norm = (occ_epoch1_transformed - occ_epoch1_transformed.min()) / (occ_epoch1_transformed.max() - occ_epoch1_transformed.min() + 1e-10)
+
+        occ_final_shifted = occ_map_final - occ_map_final.min()
+        occ_final_transformed = occ_final_shifted ** power
+        occ_final_norm = (occ_final_transformed - occ_final_transformed.min()) / (occ_final_transformed.max() - occ_final_transformed.min() + 1e-10)
 
         # Plot epoch 1 (top row)
         ax_epoch1 = fig.add_subplot(gs[0, col_idx])
         ax_epoch1.imshow(sample_image, cmap='gray', alpha=0.7)
-        im_epoch1 = ax_epoch1.imshow(occ_epoch1_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
+        im_epoch1 = ax_epoch1.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
         ax_epoch1.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nEpoch 1', fontsize=10)
         ax_epoch1.axis('off')
 
         # Plot final epoch (bottom row)
         ax_final = fig.add_subplot(gs[1, col_idx])
         ax_final.imshow(sample_image, cmap='gray', alpha=0.7)
-        im_final = ax_final.imshow(occ_final_norm, cmap='hot', alpha=0.6, vmin=0, vmax=1)
+        im_final = ax_final.imshow(occ_final_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
         ax_final.set_title(f'{depth} layer{"s" if depth > 1 else ""}\nFinal Epoch', fontsize=10)
         ax_final.axis('off')
 

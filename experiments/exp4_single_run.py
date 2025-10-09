@@ -71,7 +71,7 @@ def evaluate(model, dataloader, criterion, device):
     return running_loss / len(dataloader), 100. * correct / total
 
 
-def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples_per_class=256):
+def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples_per_class=1024):
     """
     Compute occlusion sensitivity maps for train set.
 
@@ -85,7 +85,7 @@ def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples
         trainloader: Training data loader
         criterion: Loss function
         device: Device to compute on
-        samples_per_class: Number of first samples per class to average over (default: 256)
+        samples_per_class: Number of first samples per class to average over (default: 1024)
 
     Returns:
         dict with:
@@ -118,15 +118,15 @@ def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples
     print("\nComputing occlusion sensitivity maps...")
     for class_idx in tqdm(range(10), desc="Classes", leave=False):
         # Stack all images for this class into a batch
-        images_batch = torch.stack(class_samples[class_idx]).to(device)  # Shape: (256, 1, 28, 28)
-        labels_batch = torch.tensor(class_labels[class_idx]).to(device)  # Shape: (256,)
+        images_batch = torch.stack(class_samples[class_idx]).to(device)  # Shape: (1024, 1, 28, 28)
+        labels_batch = torch.tensor(class_labels[class_idx]).to(device)  # Shape: (1024,)
         n_samples = images_batch.shape[0]
 
         # Get baseline losses for all images
         with torch.no_grad():
             outputs = model(images_batch)
             baseline_losses = torch.nn.functional.cross_entropy(outputs, labels_batch, reduction='none')
-            baseline_losses = baseline_losses.cpu().numpy()  # Shape: (256,)
+            baseline_losses = baseline_losses.cpu().numpy()  # Shape: (1024,)
 
         # For each pixel position, occlude that pixel in all images and compute loss
         occlusion_map = np.zeros((28, 28))
@@ -143,7 +143,7 @@ def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples
             with torch.no_grad():
                 outputs = model(occluded_batch)
                 occluded_losses = torch.nn.functional.cross_entropy(outputs, labels_batch, reduction='none')
-                occluded_losses = occluded_losses.cpu().numpy()  # Shape: (256,)
+                occluded_losses = occluded_losses.cpu().numpy()  # Shape: (1024,)
 
             # Average loss increase across all samples
             loss_increase = occluded_losses - baseline_losses
@@ -164,10 +164,10 @@ def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples
 
 
 def train_model(model, trainloader, testloader, device='cuda',
-                lr=0.001, weight_decay=1e-4, max_epochs=200, target_train_acc=99.0,
+                lr=0.001, weight_decay=1e-4, max_epochs=150, target_train_acc=99.0,
                 compute_occlusion=False):
     """
-    Train model until reaching target train accuracy or max epochs with Adam optimizer.
+    Train model for max_epochs with Adam optimizer (no early stopping, but tracks when target is reached).
 
     Args:
         model: The MLP model to train
@@ -201,7 +201,7 @@ def train_model(model, trainloader, testloader, device='cuda',
     occlusion_final = None
     gap_epoch1 = None
 
-    print(f"\nTraining until {target_train_acc}% train accuracy or {max_epochs} epochs...")
+    print(f"\nTraining for {max_epochs} epochs (tracking when {target_train_acc}% train accuracy is reached)...")
     pbar = tqdm(range(1, max_epochs + 1), desc="Training")
 
     for epoch in pbar:
@@ -238,25 +238,16 @@ def train_model(model, trainloader, testloader, device='cuda',
             print(f"Epoch 1 - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap_epoch1:.2f}%")
             print(f"{'='*80}\n")
 
-        # Check if we've reached target train accuracy
-        if train_acc >= target_train_acc:
+        # Track when we reach target train accuracy (but don't stop training)
+        if train_acc >= target_train_acc and epochs_to_99pct == -1:
             epochs_to_99pct = epoch
-            print(f"\nReached target train accuracy {target_train_acc}% at epoch {epoch}. Stopping training.")
-            break
+            print(f"\nReached target train accuracy {target_train_acc}% at epoch {epoch}. Continuing training...")
 
-    # Determine final metrics
-    if epochs_to_99pct != -1:
-        # We reached target, use final epoch metrics
-        final_train_acc = train_accs[-1]
-        final_test_acc = test_accs[-1]
-        final_train_loss = train_losses[-1]
-        final_test_loss = test_losses[-1]
-    else:
-        # Never reached target, use best train_acc epoch
-        final_train_acc = train_accs[best_train_acc_epoch]
-        final_test_acc = test_accs[best_train_acc_epoch]
-        final_train_loss = train_losses[best_train_acc_epoch]
-        final_test_loss = test_losses[best_train_acc_epoch]
+    # Always use final epoch metrics (no early stopping)
+    final_train_acc = train_accs[-1]
+    final_test_acc = test_accs[-1]
+    final_train_loss = train_losses[-1]
+    final_test_loss = test_losses[-1]
 
     # Compute occlusion sensitivity at final epoch
     if compute_occlusion:
@@ -310,7 +301,7 @@ def main():
                         help='Learning rate for Adam')
     parser.add_argument('--weight_decay', type=float, default=1e-4,
                         help='Weight decay')
-    parser.add_argument('--max_epochs', type=int, default=200,
+    parser.add_argument('--max_epochs', type=int, default=150,
                         help='Maximum number of training epochs')
     parser.add_argument('--target_train_acc', type=float, default=99.0,
                         help='Target train accuracy to stop training')
