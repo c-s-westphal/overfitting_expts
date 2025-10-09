@@ -71,8 +71,104 @@ def evaluate(model, dataloader, criterion, device):
     return running_loss / len(dataloader), 100. * correct / total
 
 
+def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples_per_class=10):
+    """
+    Compute occlusion sensitivity maps for train set.
+
+    For each class, selects samples_per_class random images and computes
+    occlusion sensitivity by measuring increase in loss when each pixel is occluded.
+    Returns averaged occlusion map per class and representative sample images.
+
+    Args:
+        model: Trained model
+        trainloader: Training data loader
+        criterion: Loss function
+        device: Device to compute on
+        samples_per_class: Number of random samples per class to average over
+
+    Returns:
+        dict with:
+            - 'occlusion_maps': np.array of shape (10, 28, 28) - averaged maps per class
+            - 'sample_images': np.array of shape (10, 28, 28) - representative image per class
+            - 'sample_labels': np.array of shape (10,) - class labels (0-9)
+    """
+    model.eval()
+
+    # Collect samples per class
+    class_samples = {i: [] for i in range(10)}
+    class_images = {i: [] for i in range(10)}
+
+    with torch.no_grad():
+        for inputs, labels in trainloader:
+            for i in range(len(labels)):
+                label = labels[i].item()
+                if len(class_samples[label]) < samples_per_class:
+                    class_samples[label].append((inputs[i], label))
+                    class_images[label].append(inputs[i].cpu().numpy())
+
+            # Check if we have enough samples
+            if all(len(class_samples[c]) >= samples_per_class for c in range(10)):
+                break
+
+    # Compute occlusion maps for each class
+    occlusion_maps = np.zeros((10, 28, 28))
+    sample_images = np.zeros((10, 28, 28))
+
+    print("\nComputing occlusion sensitivity maps...")
+    for class_idx in tqdm(range(10), desc="Classes", leave=False):
+        class_occlusion_maps = []
+
+        for sample_img, label in class_samples[class_idx]:
+            sample_img = sample_img.unsqueeze(0).to(device)  # Shape: (1, 1, 28, 28)
+            label_tensor = torch.tensor([label]).to(device)
+
+            # Get baseline loss
+            with torch.no_grad():
+                output = model(sample_img)
+                baseline_loss = criterion(output, label_tensor).item()
+
+            # Create batch of occluded images (784 total, one for each pixel)
+            batch_size = 784
+            occluded_batch = sample_img.repeat(batch_size, 1, 1, 1)  # Shape: (784, 1, 28, 28)
+
+            # Occlude each pixel
+            for idx in range(784):
+                row = idx // 28
+                col = idx % 28
+                occluded_batch[idx, 0, row, col] = 0
+
+            # Compute losses for all occluded versions in one forward pass
+            with torch.no_grad():
+                outputs = model(occluded_batch)
+                label_batch = label_tensor.repeat(batch_size)
+                losses = torch.nn.functional.cross_entropy(outputs, label_batch, reduction='none')
+                losses = losses.cpu().numpy()
+
+            # Reshape to 28x28 occlusion map (increase in loss)
+            occlusion_map = (losses - baseline_loss).reshape(28, 28)
+            class_occlusion_maps.append(occlusion_map)
+
+        # Average across samples
+        avg_occlusion_map = np.mean(class_occlusion_maps, axis=0)
+        occlusion_maps[class_idx] = avg_occlusion_map
+
+        # Find representative sample (closest to mean)
+        distances = [np.linalg.norm(om - avg_occlusion_map) for om in class_occlusion_maps]
+        representative_idx = np.argmin(distances)
+        sample_images[class_idx] = class_images[class_idx][representative_idx].squeeze()  # Remove channel dim
+
+    print("Occlusion sensitivity computation complete.\n")
+
+    return {
+        'occlusion_maps': occlusion_maps,
+        'sample_images': sample_images,
+        'sample_labels': np.arange(10)
+    }
+
+
 def train_model(model, trainloader, testloader, device='cuda',
-                lr=0.001, weight_decay=1e-4, max_epochs=200, target_train_acc=99.0):
+                lr=0.001, weight_decay=1e-4, max_epochs=200, target_train_acc=99.0,
+                compute_occlusion=False):
     """
     Train model until reaching target train accuracy or max epochs with Adam optimizer.
 
@@ -85,6 +181,7 @@ def train_model(model, trainloader, testloader, device='cuda',
         weight_decay: Weight decay (L2 regularization)
         max_epochs: Maximum number of training epochs
         target_train_acc: Target training accuracy to stop (default: 99.0%)
+        compute_occlusion: If True, compute occlusion sensitivity at epoch 5 and final
 
     Returns:
         dict: Training metrics including epochs_to_99pct, accuracies, and generalization gap
@@ -101,6 +198,11 @@ def train_model(model, trainloader, testloader, device='cuda',
     epochs_to_99pct = -1
     best_train_acc = 0.0
     best_train_acc_epoch = -1
+
+    # Storage for occlusion sensitivity
+    occlusion_epoch5 = None
+    occlusion_final = None
+    gap_epoch5 = None
 
     print(f"\nTraining until {target_train_acc}% train accuracy or {max_epochs} epochs...")
     pbar = tqdm(range(1, max_epochs + 1), desc="Training")
@@ -129,6 +231,16 @@ def train_model(model, trainloader, testloader, device='cuda',
         if epoch % 10 == 0:
             print(f"\nEpoch {epoch}/{max_epochs} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
 
+        # Compute occlusion sensitivity at epoch 5
+        if compute_occlusion and epoch == 5:
+            print(f"\n{'='*80}")
+            print(f"Computing occlusion sensitivity at epoch 5...")
+            print(f"{'='*80}")
+            occlusion_epoch5 = compute_occlusion_sensitivity(model, trainloader, criterion, device)
+            gap_epoch5 = train_acc - test_acc
+            print(f"Epoch 5 - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap_epoch5:.2f}%")
+            print(f"{'='*80}\n")
+
         # Check if we've reached target train accuracy
         if train_acc >= target_train_acc:
             epochs_to_99pct = epoch
@@ -149,6 +261,14 @@ def train_model(model, trainloader, testloader, device='cuda',
         final_train_loss = train_losses[best_train_acc_epoch]
         final_test_loss = test_losses[best_train_acc_epoch]
 
+    # Compute occlusion sensitivity at final epoch
+    if compute_occlusion:
+        print(f"\n{'='*80}")
+        print(f"Computing occlusion sensitivity at final epoch...")
+        print(f"{'='*80}")
+        occlusion_final = compute_occlusion_sensitivity(model, trainloader, criterion, device)
+        print(f"{'='*80}\n")
+
     return {
         'train_losses': train_losses,
         'train_accs': train_accs,
@@ -160,7 +280,10 @@ def train_model(model, trainloader, testloader, device='cuda',
         'final_test_acc': final_test_acc,
         'generalization_gap': final_train_acc - final_test_acc,
         'total_epochs': len(train_accs),
-        'epochs_to_99pct': epochs_to_99pct
+        'epochs_to_99pct': epochs_to_99pct,
+        'occlusion_epoch5': occlusion_epoch5,
+        'occlusion_final': occlusion_final,
+        'gap_epoch5': gap_epoch5
     }
 
 
@@ -267,11 +390,12 @@ def main():
         augment=(not args.no_augment)
     )
 
-    # Train model
+    # Train model with occlusion sensitivity computation
     metrics = train_model(
         model, trainloader, testloader, device=args.device,
         lr=args.lr, weight_decay=args.weight_decay,
-        max_epochs=args.max_epochs, target_train_acc=args.target_train_acc
+        max_epochs=args.max_epochs, target_train_acc=args.target_train_acc,
+        compute_occlusion=True
     )
 
     # Prepare results
@@ -293,7 +417,22 @@ def main():
         'generalization_gap': metrics['generalization_gap'],
         'train_loss': metrics['final_train_loss'],
         'test_loss': metrics['final_test_loss'],
+        'gap_epoch5': metrics['gap_epoch5'],
     }
+
+    # Add occlusion data if available
+    if metrics['occlusion_epoch5'] is not None:
+        result.update({
+            'occlusion_maps_epoch5': metrics['occlusion_epoch5']['occlusion_maps'],
+            'sample_images_epoch5': metrics['occlusion_epoch5']['sample_images'],
+            'sample_labels_epoch5': metrics['occlusion_epoch5']['sample_labels'],
+        })
+    if metrics['occlusion_final'] is not None:
+        result.update({
+            'occlusion_maps_final': metrics['occlusion_final']['occlusion_maps'],
+            'sample_images_final': metrics['occlusion_final']['sample_images'],
+            'sample_labels_final': metrics['occlusion_final']['sample_labels'],
+        })
 
     if is_valid:
         print(f"\n{'='*80}")
@@ -341,11 +480,12 @@ def main():
         augment=(not args.no_augment)
     )
 
-    # Train model without special pixel
+    # Train model without special pixel with occlusion sensitivity computation
     metrics_nopixel = train_model(
         model_nopixel, trainloader_nopixel, testloader_nopixel, device=args.device,
         lr=args.lr, weight_decay=args.weight_decay,
-        max_epochs=args.max_epochs, target_train_acc=args.target_train_acc
+        max_epochs=args.max_epochs, target_train_acc=args.target_train_acc,
+        compute_occlusion=True
     )
 
     # Prepare results for no-pixel version
@@ -367,7 +507,22 @@ def main():
         'generalization_gap': metrics_nopixel['generalization_gap'],
         'train_loss': metrics_nopixel['final_train_loss'],
         'test_loss': metrics_nopixel['final_test_loss'],
+        'gap_epoch5': metrics_nopixel['gap_epoch5'],
     }
+
+    # Add occlusion data if available
+    if metrics_nopixel['occlusion_epoch5'] is not None:
+        result_nopixel.update({
+            'occlusion_maps_epoch5': metrics_nopixel['occlusion_epoch5']['occlusion_maps'],
+            'sample_images_epoch5': metrics_nopixel['occlusion_epoch5']['sample_images'],
+            'sample_labels_epoch5': metrics_nopixel['occlusion_epoch5']['sample_labels'],
+        })
+    if metrics_nopixel['occlusion_final'] is not None:
+        result_nopixel.update({
+            'occlusion_maps_final': metrics_nopixel['occlusion_final']['occlusion_maps'],
+            'sample_images_final': metrics_nopixel['occlusion_final']['sample_images'],
+            'sample_labels_final': metrics_nopixel['occlusion_final']['sample_labels'],
+        })
 
     if is_valid_nopixel:
         print(f"\n{'='*80}")

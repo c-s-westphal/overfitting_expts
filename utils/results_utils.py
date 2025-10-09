@@ -23,7 +23,7 @@ def load_experiment_results(experiment_type, model_name):
 def aggregate_results(results_dict):
     aggregated = {}
 
-    for key in ['train_accs', 'test_accs', 'generalization_gaps', 'train_losses', 'test_losses', 'epochs_to_100pct', 'epochs_to_99pct']:
+    for key in ['train_accs', 'test_accs', 'generalization_gaps', 'train_losses', 'test_losses', 'epochs_to_100pct', 'epochs_to_99pct', 'gap_epoch5']:
         if key in results_dict:
             data = results_dict[key]
             means = []
