@@ -21,14 +21,14 @@ class MLP_Variable(nn.Module):
 
     Args:
         num_classes (int): Number of output classes (default: 10)
-        n_layers (int): Number of hidden layers (1-15)
+        n_layers (int): Number of hidden layers (1-50)
         initial_hidden_dim (int): Hidden dimension for all layers (default: 256)
     """
     def __init__(self, num_classes=10, n_layers=3, initial_hidden_dim=256):
         super(MLP_Variable, self).__init__()
 
-        if n_layers < 1 or n_layers > 15:
-            raise ValueError(f"n_layers must be between 1 and 15, got {n_layers}")
+        if n_layers < 1 or n_layers > 50:
+            raise ValueError(f"n_layers must be between 1 and 50, got {n_layers}")
 
         self.n_layers = n_layers
         self.initial_hidden_dim = initial_hidden_dim
