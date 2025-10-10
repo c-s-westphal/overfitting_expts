@@ -280,9 +280,9 @@ def main():
                         help='Device (cuda or cpu)')
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Output directory for results')
-    parser.add_argument('--pixel_row', type=int, default=0,
+    parser.add_argument('--pixel_row', type=int, default=16,
                         help='Row for special pixel (0-31)')
-    parser.add_argument('--pixel_col', type=int, default=0,
+    parser.add_argument('--pixel_col', type=int, default=16,
                         help='Column for special pixel (0-31)')
     parser.add_argument('--no_augment', action='store_true',
                         help='Disable train-time augmentation')

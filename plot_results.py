@@ -225,6 +225,264 @@ def plot_experiment_3():
     print("Experiment 3 plot saved to plots/experiment_3_vgg_gap_and_epochs_vs_depth.png")
 
 
+def plot_experiment_3_occlusion():
+    """Plot Experiment 3 occlusion sensitivity (with pixel)."""
+    import matplotlib.gridspec as gridspec
+    import glob
+
+    results_dir = 'results/exp3'
+
+    # We'll plot for specific VGG architectures and layer counts
+    # Format: (arch_name, [evenly spaced layers])
+    # Using up to 5 evenly spaced layers (4 for VGG11 due to smaller range)
+    configs = [
+        ('vgg11var', [4, 5, 7, 8]),        # VGG11: 4-8 layers (4 points)
+        ('vgg13var', [4, 6, 7, 9, 10]),    # VGG13: 4-10 layers (5 points)
+        ('vgg16var', [4, 6, 9, 11, 13]),   # VGG16: 4-13 layers (5 points)
+        ('vgg19var', [4, 7, 10, 13, 16]),  # VGG19: 4-16 layers (5 points)
+    ]
+
+    for arch_name, target_layers in configs:
+        fig = plt.figure(figsize=(5 * len(target_layers), 8))
+        gs = gridspec.GridSpec(2, len(target_layers), figure=fig, hspace=0.3, wspace=0.3)
+
+        found_any = False
+        im_final = None
+
+        for col_idx, n_layers in enumerate(target_layers):
+            # Load all seeds and average occlusion maps
+            all_files = glob.glob(os.path.join(results_dir, f"{arch_name}_layers{n_layers}_seed*_results.npz"))
+            matching_files = [f for f in all_files if 'nopixel' not in f]
+
+            if not matching_files:
+                print(f"No results found for {arch_name} layers {n_layers}")
+                continue
+
+            # Collect occlusion maps across all seeds AND all classes
+            epoch1_maps_all_classes = []
+            final_maps_all_classes = []
+            sample_image = None
+
+            for result_file in matching_files:
+                data = np.load(result_file, allow_pickle=True)
+
+                # Check if occlusion data exists
+                if 'occlusion_maps_epoch1' not in data or 'occlusion_maps_final' not in data:
+                    continue
+
+                occlusion_epoch1 = data['occlusion_maps_epoch1']  # Shape: (10, 32, 32)
+                occlusion_final = data['occlusion_maps_final']
+
+                # Average across all 10 classes for this seed
+                epoch1_maps_all_classes.append(np.mean(occlusion_epoch1, axis=0))
+                final_maps_all_classes.append(np.mean(occlusion_final, axis=0))
+
+                # Use seed 0's first sample image (class 0) just for display
+                if sample_image is None and 'seed0' in result_file:
+                    sample_image = data['sample_images_epoch1'][0]
+
+            if not epoch1_maps_all_classes:
+                print(f"No occlusion data found for {arch_name} layers {n_layers}")
+                continue
+
+            # Use first available sample image if seed0 not found
+            if sample_image is None:
+                data = np.load(matching_files[0], allow_pickle=True)
+                if 'sample_images_epoch1' in data:
+                    sample_image = data['sample_images_epoch1'][0]
+
+            # Average occlusion maps across all seeds (already averaged across classes)
+            occ_map_epoch1 = np.mean(epoch1_maps_all_classes, axis=0)
+            occ_map_final = np.mean(final_maps_all_classes, axis=0)
+
+            # Apply power transform to compress dynamic range
+            power = 0.5  # Square root transform
+
+            # Shift to non-negative before power transform
+            occ_epoch1_shifted = occ_map_epoch1 - occ_map_epoch1.min()
+            occ_epoch1_transformed = occ_epoch1_shifted ** power
+            occ_epoch1_norm = (occ_epoch1_transformed - occ_epoch1_transformed.min()) / (occ_epoch1_transformed.max() - occ_epoch1_transformed.min() + 1e-10)
+
+            occ_final_shifted = occ_map_final - occ_map_final.min()
+            occ_final_transformed = occ_final_shifted ** power
+            occ_final_norm = (occ_final_transformed - occ_final_transformed.min()) / (occ_final_transformed.max() - occ_final_transformed.min() + 1e-10)
+
+            if sample_image is not None:
+                # Convert RGB image from (3, 32, 32) to (32, 32, 3) for display
+                sample_image_display = np.transpose(sample_image, (1, 2, 0))
+                # Normalize to [0, 1] for display
+                sample_image_display = (sample_image_display - sample_image_display.min()) / (sample_image_display.max() - sample_image_display.min() + 1e-10)
+
+            # Plot epoch 1 (top row)
+            ax_epoch1 = fig.add_subplot(gs[0, col_idx])
+            if sample_image is not None:
+                ax_epoch1.imshow(sample_image_display)
+            im_epoch1 = ax_epoch1.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
+            ax_epoch1.set_title(f'{n_layers} layers\nEpoch 1', fontsize=10)
+            ax_epoch1.axis('off')
+
+            # Plot final epoch (bottom row)
+            ax_final = fig.add_subplot(gs[1, col_idx])
+            if sample_image is not None:
+                ax_final.imshow(sample_image_display)
+            im_final = ax_final.imshow(occ_final_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
+            ax_final.set_title(f'{n_layers} layers\nFinal Epoch', fontsize=10)
+            ax_final.axis('off')
+
+            found_any = True
+
+        # Check if we found any data
+        if not found_any:
+            plt.close(fig)
+            print(f"No occlusion data found for {arch_name}")
+            continue
+
+        # Add colorbar
+        if im_final is not None:
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+            cbar = fig.colorbar(im_final, cax=cbar_ax)
+            cbar.set_label('Occlusion Sensitivity (normalized)', rotation=270, labelpad=20)
+
+        arch_display = arch_name.replace('var', '').upper()
+        fig.suptitle(f'Experiment 3: {arch_display} Occlusion Sensitivity (Averaged Across All Classes)',
+                     fontsize=14, y=0.98)
+
+        os.makedirs('plots', exist_ok=True)
+        plt.savefig(f'plots/experiment_3_{arch_name}_occlusion_sensitivity.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Experiment 3 {arch_name} occlusion plot saved to plots/experiment_3_{arch_name}_occlusion_sensitivity.png")
+
+
+def plot_experiment_3_occlusion_nopixel():
+    """Plot Experiment 3 occlusion sensitivity (without pixel)."""
+    import matplotlib.gridspec as gridspec
+    import glob
+
+    results_dir = 'results/exp3'
+
+    # We'll plot for specific VGG architectures and layer counts
+    # Format: (arch_name, [evenly spaced layers])
+    # Using up to 5 evenly spaced layers (4 for VGG11 due to smaller range)
+    configs = [
+        ('vgg11var', [4, 5, 7, 8]),        # VGG11: 4-8 layers (4 points)
+        ('vgg13var', [4, 6, 7, 9, 10]),    # VGG13: 4-10 layers (5 points)
+        ('vgg16var', [4, 6, 9, 11, 13]),   # VGG16: 4-13 layers (5 points)
+        ('vgg19var', [4, 7, 10, 13, 16]),  # VGG19: 4-16 layers (5 points)
+    ]
+
+    for arch_name, target_layers in configs:
+        fig = plt.figure(figsize=(5 * len(target_layers), 8))
+        gs = gridspec.GridSpec(2, len(target_layers), figure=fig, hspace=0.3, wspace=0.3)
+
+        found_any = False
+        im_final = None
+
+        for col_idx, n_layers in enumerate(target_layers):
+            # Load all seeds and average occlusion maps (NOPIXEL FILES)
+            all_files = glob.glob(os.path.join(results_dir, f"{arch_name}_layers{n_layers}_seed*_nopixel_results.npz"))
+            matching_files = all_files
+
+            if not matching_files:
+                print(f"No nopixel results found for {arch_name} layers {n_layers}")
+                continue
+
+            # Collect occlusion maps across all seeds AND all classes
+            epoch1_maps_all_classes = []
+            final_maps_all_classes = []
+            sample_image = None
+
+            for result_file in matching_files:
+                data = np.load(result_file, allow_pickle=True)
+
+                # Check if occlusion data exists
+                if 'occlusion_maps_epoch1' not in data or 'occlusion_maps_final' not in data:
+                    continue
+
+                occlusion_epoch1 = data['occlusion_maps_epoch1']  # Shape: (10, 32, 32)
+                occlusion_final = data['occlusion_maps_final']
+
+                # Average across all 10 classes for this seed
+                epoch1_maps_all_classes.append(np.mean(occlusion_epoch1, axis=0))
+                final_maps_all_classes.append(np.mean(occlusion_final, axis=0))
+
+                # Use seed 0's first sample image (class 0) just for display
+                if sample_image is None and 'seed0' in result_file:
+                    sample_image = data['sample_images_epoch1'][0]
+
+            if not epoch1_maps_all_classes:
+                print(f"No occlusion data found for {arch_name} layers {n_layers} (nopixel)")
+                continue
+
+            # Use first available sample image if seed0 not found
+            if sample_image is None:
+                data = np.load(matching_files[0], allow_pickle=True)
+                if 'sample_images_epoch1' in data:
+                    sample_image = data['sample_images_epoch1'][0]
+
+            # Average occlusion maps across all seeds (already averaged across classes)
+            occ_map_epoch1 = np.mean(epoch1_maps_all_classes, axis=0)
+            occ_map_final = np.mean(final_maps_all_classes, axis=0)
+
+            # Apply power transform to compress dynamic range
+            power = 0.5  # Square root transform
+
+            # Shift to non-negative before power transform
+            occ_epoch1_shifted = occ_map_epoch1 - occ_map_epoch1.min()
+            occ_epoch1_transformed = occ_epoch1_shifted ** power
+            occ_epoch1_norm = (occ_epoch1_transformed - occ_epoch1_transformed.min()) / (occ_epoch1_transformed.max() - occ_epoch1_transformed.min() + 1e-10)
+
+            occ_final_shifted = occ_map_final - occ_map_final.min()
+            occ_final_transformed = occ_final_shifted ** power
+            occ_final_norm = (occ_final_transformed - occ_final_transformed.min()) / (occ_final_transformed.max() - occ_final_transformed.min() + 1e-10)
+
+            if sample_image is not None:
+                # Convert RGB image from (3, 32, 32) to (32, 32, 3) for display
+                sample_image_display = np.transpose(sample_image, (1, 2, 0))
+                # Normalize to [0, 1] for display
+                sample_image_display = (sample_image_display - sample_image_display.min()) / (sample_image_display.max() - sample_image_display.min() + 1e-10)
+
+            # Plot epoch 1 (top row)
+            ax_epoch1 = fig.add_subplot(gs[0, col_idx])
+            if sample_image is not None:
+                ax_epoch1.imshow(sample_image_display)
+            im_epoch1 = ax_epoch1.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
+            ax_epoch1.set_title(f'{n_layers} layers\nEpoch 1', fontsize=10)
+            ax_epoch1.axis('off')
+
+            # Plot final epoch (bottom row)
+            ax_final = fig.add_subplot(gs[1, col_idx])
+            if sample_image is not None:
+                ax_final.imshow(sample_image_display)
+            im_final = ax_final.imshow(occ_final_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
+            ax_final.set_title(f'{n_layers} layers\nFinal Epoch', fontsize=10)
+            ax_final.axis('off')
+
+            found_any = True
+
+        # Check if we found any data
+        if not found_any:
+            plt.close(fig)
+            print(f"No occlusion data found for {arch_name} (nopixel)")
+            continue
+
+        # Add colorbar
+        if im_final is not None:
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+            cbar = fig.colorbar(im_final, cax=cbar_ax)
+            cbar.set_label('Occlusion Sensitivity (normalized)', rotation=270, labelpad=20)
+
+        arch_display = arch_name.replace('var', '').upper()
+        fig.suptitle(f'Experiment 3: {arch_display} Occlusion Sensitivity - No Special Pixel (Averaged Across All Classes)',
+                     fontsize=14, y=0.98)
+
+        os.makedirs('plots', exist_ok=True)
+        plt.savefig(f'plots/experiment_3_{arch_name}_occlusion_sensitivity_nopixel.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Experiment 3 {arch_name} nopixel occlusion plot saved to plots/experiment_3_{arch_name}_occlusion_sensitivity_nopixel.png")
+
+
 def plot_experiment_4():
     """Plot Experiment 4: MLP Variable - Generalization Gap (epoch 5 and final) and Epochs to 99% vs Number of Layers."""
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(30, 8))
@@ -671,6 +929,8 @@ def main():
     plot_experiment_1()
     plot_experiment_2()
     plot_experiment_3()
+    plot_experiment_3_occlusion()
+    plot_experiment_3_occlusion_nopixel()
     plot_experiment_4()
     plot_experiment_4_occlusion()
     plot_experiment_4_occlusion_nopixel()
