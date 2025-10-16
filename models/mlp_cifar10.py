@@ -6,23 +6,56 @@ for better training stability and regularization.
 """
 import torch
 import torch.nn as nn
+import numpy as np
+
+
+def compute_smooth_exponential_widths(n_layers, initial_width=1024, target_width=64):
+    """Compute layer widths using smooth exponential decay.
+
+    Formula: width[i] = round(initial_width × (target_width / initial_width)^(i / (n_layers - 1)))
+
+    Args:
+        n_layers: Number of hidden layers
+        initial_width: Width of first hidden layer
+        target_width: Width of final hidden layer
+
+    Returns:
+        List of hidden layer widths
+    """
+    if n_layers == 1:
+        return [initial_width]
+
+    widths = []
+    ratio = target_width / initial_width
+    for i in range(n_layers):
+        exponent = i / (n_layers - 1)
+        width = initial_width * (ratio ** exponent)
+        widths.append(int(round(width)))
+
+    return widths
 
 
 class ResidualMLPBlock(nn.Module):
-    """Residual MLP block with pre-activation LayerNorm.
+    """Residual MLP block with pre-activation LayerNorm and optional projection.
 
-    Architecture: LayerNorm -> Linear -> ReLU -> Dropout -> residual connection
+    Architecture: LayerNorm -> Linear -> ReLU -> Dropout -> (projection) + residual
 
     Args:
-        hidden_dim (int): Hidden dimension size
+        in_dim (int): Input dimension size
+        out_dim (int): Output dimension size
         dropout (float): Dropout probability
     """
-    def __init__(self, hidden_dim, dropout=0.3):
+    def __init__(self, in_dim, out_dim, dropout=0.3):
         super(ResidualMLPBlock, self).__init__()
-        self.norm = nn.LayerNorm(hidden_dim)
-        self.linear = nn.Linear(hidden_dim, hidden_dim)
+        self.norm = nn.LayerNorm(in_dim)
+        self.linear = nn.Linear(in_dim, out_dim)
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(dropout)
+
+        # Projection for residual if dimensions don't match
+        self.projection = None
+        if in_dim != out_dim:
+            self.projection = nn.Linear(in_dim, out_dim, bias=False)
 
     def forward(self, x):
         identity = x
@@ -30,6 +63,11 @@ class ResidualMLPBlock(nn.Module):
         out = self.linear(out)
         out = self.relu(out)
         out = self.dropout(out)
+
+        # Apply projection to identity if needed
+        if self.projection is not None:
+            identity = self.projection(identity)
+
         out = out + identity  # Residual connection
         return out
 
@@ -40,43 +78,65 @@ class MLP_CIFAR10(nn.Module):
 
     Architecture:
     - Input: 3072 (32x32x3 flattened)
-    - First layer: Linear projection to hidden_dim
+    - First layer: Linear projection to first hidden dimension
     - Hidden layers: Residual MLP blocks with LayerNorm (pre-activation)
     - Output: 10 classes
+
+    Supports variable width per layer using smooth exponential decay.
 
     Args:
         num_classes (int): Number of output classes (default: 10)
         n_layers (int): Number of hidden layers (1-50)
-        hidden_dim (int): Hidden dimension for all layers (default: 256)
+        hidden_dims (list or int): Hidden dimensions (list for variable, int for fixed)
         dropout (float): Dropout probability (default: 0.3)
+        initial_width (int): Initial width for smooth exponential decay (default: 1024)
+        target_width (int): Target width for smooth exponential decay (default: 64)
     """
-    def __init__(self, num_classes=10, n_layers=3, hidden_dim=256, dropout=0.3):
+    def __init__(self, num_classes=10, n_layers=3, hidden_dims=None, dropout=0.3,
+                 initial_width=1024, target_width=64):
         super(MLP_CIFAR10, self).__init__()
 
         if n_layers < 1 or n_layers > 50:
             raise ValueError(f"n_layers must be between 1 and 50, got {n_layers}")
 
         self.n_layers = n_layers
-        self.hidden_dim = hidden_dim
         self.input_dim = 3072  # 32x32x3 CIFAR-10
         self.dropout = dropout
 
-        # First layer: project input to hidden dimension
-        self.input_proj = nn.Linear(self.input_dim, hidden_dim)
+        # Compute hidden dimensions
+        if hidden_dims is None:
+            # Use smooth exponential decay
+            self.hidden_dims = compute_smooth_exponential_widths(n_layers, initial_width, target_width)
+        elif isinstance(hidden_dims, int):
+            # Fixed width for all layers
+            self.hidden_dims = [hidden_dims] * n_layers
+        else:
+            # Use provided list
+            self.hidden_dims = hidden_dims
+
+        if len(self.hidden_dims) != n_layers:
+            raise ValueError(f"hidden_dims length ({len(self.hidden_dims)}) must match n_layers ({n_layers})")
+
+        # For backwards compatibility, store first hidden dim as hidden_dim
+        self.hidden_dim = self.hidden_dims[0]
+
+        # First layer: project input to first hidden dimension
+        self.input_proj = nn.Linear(self.input_dim, self.hidden_dims[0])
         self.input_relu = nn.ReLU(inplace=True)
         self.input_dropout = nn.Dropout(dropout)
 
-        # Hidden layers with residual connections
-        self.blocks = nn.ModuleList([
-            ResidualMLPBlock(hidden_dim, dropout)
-            for _ in range(n_layers - 1)
-        ])
+        # Hidden layers with residual connections and variable widths
+        self.blocks = nn.ModuleList()
+        for i in range(n_layers - 1):
+            in_dim = self.hidden_dims[i]
+            out_dim = self.hidden_dims[i + 1]
+            self.blocks.append(ResidualMLPBlock(in_dim, out_dim, dropout))
 
-        # Final layer norm before output
-        self.final_norm = nn.LayerNorm(hidden_dim)
+        # Final layer norm before output (uses last hidden dim)
+        self.final_norm = nn.LayerNorm(self.hidden_dims[-1])
 
-        # Output layer
-        self.output = nn.Linear(hidden_dim, num_classes)
+        # Output layer (from last hidden dim to num_classes)
+        self.output = nn.Linear(self.hidden_dims[-1], num_classes)
 
         # Initialize weights
         self._initialize_weights()
@@ -138,22 +198,35 @@ class MLP_CIFAR10(nn.Module):
 
 
 if __name__ == "__main__":
-    # Test the models
-    print("Testing MLP_CIFAR10 with LayerNorm and residual connections:")
+    # Test the models with smooth exponential decay
+    print("Testing MLP_CIFAR10 with smooth exponential decay (1024 -> 64):")
     print("=" * 80)
 
-    for n in range(1, 11):
-        model = MLP_CIFAR10(n_layers=n, hidden_dim=256, dropout=0.3)
+    test_depths = [1, 5, 10, 15, 20]
+    for n in test_depths:
+        model = MLP_CIFAR10(n_layers=n, dropout=0.3, initial_width=1024, target_width=64)
         x = torch.randn(32, 3, 32, 32)
         y = model(x)
 
-        print(f"MLP with {n:2d} hidden layers: "
-              f"hidden_dim={model.hidden_dim:4d} | "
-              f"params: {model.count_parameters():,} | "
-              f"output shape: {y.shape}")
+        widths_str = " -> ".join([str(w) for w in model.hidden_dims])
+        print(f"\nMLP with {n:2d} layers:")
+        print(f"  Widths: {widths_str}")
+        print(f"  Total params: {model.count_parameters():,}")
+        print(f"  Output shape: {y.shape}")
 
         # Verify first hidden layer hook
         first_hidden = model.get_first_hidden_layer()
-        print(f"  First hidden layer module: {type(first_hidden).__name__}")
+        print(f"  First hidden layer module: {type(first_hidden).__name__}, width={model.hidden_dim}")
+
+    print("\n" + "=" * 80)
+    print("Testing backwards compatibility with fixed width:")
+    print("=" * 80)
+
+    model_fixed = MLP_CIFAR10(n_layers=3, hidden_dims=256, dropout=0.3)
+    x = torch.randn(32, 3, 32, 32)
+    y = model_fixed(x)
+    widths_str = " -> ".join([str(w) for w in model_fixed.hidden_dims])
+    print(f"MLP with 3 layers (fixed width 256): {widths_str}")
+    print(f"Total params: {model_fixed.count_parameters():,}")
 
     print("=" * 80)
