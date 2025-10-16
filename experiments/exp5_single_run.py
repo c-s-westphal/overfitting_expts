@@ -329,7 +329,7 @@ def main():
         description='Experiment 5: Variable-depth MLP on CIFAR-10 with MI evaluation'
     )
     parser.add_argument('--n_layers', type=int, required=True,
-                        help='Number of hidden layers (1, 5, 10, 15, or 20)')
+                        help='Number of hidden layers (1-10)')
     parser.add_argument('--seed', type=int, required=True,
                         help='Random seed')
     parser.add_argument('--batch_size', type=int, default=512,
@@ -340,10 +340,8 @@ def main():
                         help='Output directory for results')
 
     # Model architecture
-    parser.add_argument('--initial_width', type=int, default=1024,
-                        help='Initial hidden layer width (default: 1024)')
-    parser.add_argument('--target_width', type=int, default=64,
-                        help='Target final hidden layer width (default: 64)')
+    parser.add_argument('--hidden_dim', type=int, default=256,
+                        help='Hidden dimension (default: 256)')
     parser.add_argument('--dropout', type=float, default=0.3,
                         help='Dropout probability (default: 0.3)')
 
@@ -392,26 +390,21 @@ def main():
     # Scale learning rate based on batch size (linear scaling)
     scaled_lr = args.lr * (args.batch_size / 512)
 
-    # Create model with smooth exponential decay
+    # Create model
     model = MLP_CIFAR10(
         num_classes=10,
         n_layers=args.n_layers,
-        dropout=args.dropout,
-        initial_width=args.initial_width,
-        target_width=args.target_width
+        hidden_dim=args.hidden_dim,
+        dropout=args.dropout
     )
     model = model.to(device)
 
-    # Format hidden dims for display
-    widths_str = " → ".join([str(w) for w in model.hidden_dims])
-
     print(f"\n{'='*80}")
-    print(f"Experiment 5: MLP Variable Depth on CIFAR-10 with Smooth Exponential Decay")
+    print(f"Experiment 5: MLP Variable Depth on CIFAR-10")
     print(f"{'='*80}")
     print(f"Architecture:     MLP with LayerNorm and residual connections")
     print(f"Hidden Layers:    {args.n_layers}")
-    print(f"Width Decay:      {args.initial_width} → {args.target_width}")
-    print(f"Layer Widths:     {widths_str}")
+    print(f"Hidden Dim:       {args.hidden_dim}")
     print(f"Dropout:          {args.dropout}")
     print(f"Total Params:     {model.count_parameters():,}")
     print(f"Seed:             {args.seed}")
@@ -559,9 +552,7 @@ def main():
     result = {
         'model': 'MLP_CIFAR10',
         'n_layers': args.n_layers,
-        'hidden_dims': np.array(model.hidden_dims),
-        'initial_width': args.initial_width,
-        'target_width': args.target_width,
+        'hidden_dim': args.hidden_dim,
         'dropout': args.dropout,
         'seed': args.seed,
         'num_parameters': model.count_parameters(),

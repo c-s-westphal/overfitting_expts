@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp5_mlp
-#$ -t 1-25
+#$ -t 1-50
 set -euo pipefail
 
 hostname
@@ -72,8 +72,7 @@ python3.9 -u experiments/exp5_single_run.py \
     --device cuda \
     --output_dir results/exp5 \
     --epochs 200 \
-    --initial_width 1024 \
-    --target_width 64 \
+    --hidden_dim 256 \
     --dropout 0.3 \
     --lr 1e-3 \
     --weight_decay 0.01 \
