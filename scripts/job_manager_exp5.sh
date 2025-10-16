@@ -1,13 +1,13 @@
 #!/bin/bash
 #$ -l tmem=16G
-#$ -l h_rt=12:00:00
+#$ -l h_rt=24:00:00
 #$ -l gpu=true
 #$ -R y
 #$ -cwd
 #$ -S /bin/bash
 #$ -j y
-#$ -N exp5_allconv
-#$ -t 1-45
+#$ -N exp5_mlp
+#$ -t 1-50
 set -euo pipefail
 
 hostname
@@ -59,7 +59,7 @@ if [[ -z "$n_layers" || -z "$seed" ]]; then
 fi
 
 date
-echo "Running exp5 All-Conv Variable: n_layers=$n_layers, seed=$seed"
+echo "Running exp5 MLP Variable: n_layers=$n_layers, seed=$seed"
 
 # ---------------------------------------------------------------------
 # 5.  Run single experiment
@@ -67,12 +67,24 @@ echo "Running exp5 All-Conv Variable: n_layers=$n_layers, seed=$seed"
 echo "Starting training..."
 python3.9 -u experiments/exp5_single_run.py \
     --n_layers "$n_layers" \
-    --mi_bits 2.5 \
     --seed "$seed" \
-    --batch_size 128 \
+    --batch_size 512 \
     --device cuda \
     --output_dir results/exp5 \
-    --num_epochs 20
+    --epochs 200 \
+    --hidden_dim 256 \
+    --dropout 0.3 \
+    --lr 1e-3 \
+    --weight_decay 0.01 \
+    --grad_clip 1.0 \
+    --warmup_epochs 5 \
+    --label_smoothing 0.1 \
+    --eval_interval 10 \
+    --n_masks_train 20 \
+    --n_masks_final 40 \
+    --max_eval_batches_train 20 \
+    --max_eval_batches_final 40 \
+    --num_workers 4
 
 date
-echo "Training completed: All-Conv n_layers=$n_layers seed=$seed"
+echo "Training completed: MLP n_layers=$n_layers seed=$seed"
