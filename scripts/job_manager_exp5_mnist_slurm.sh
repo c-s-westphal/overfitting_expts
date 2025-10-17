@@ -81,7 +81,7 @@ else
         --n_masks_final 40 \
         --max_eval_batches_train 20 \
         --max_eval_batches_final 40 \
-        --num_workers 4
+        --num_workers 0
 
     date
     echo "Training completed: MLP n_layers=$n_layers seed=$seed dataset=$dataset"
