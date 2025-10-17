@@ -325,9 +325,11 @@ def train_one_epoch(model, train_loader, criterion, optimizer, device, use_cutmi
 
 
 def main():
+    print("Starting exp5_single_run.py main()...", flush=True)
     parser = argparse.ArgumentParser(
         description='Experiment 5: Variable-depth MLP on CIFAR-10/MNIST with MI evaluation'
     )
+    print("Parser created", flush=True)
     parser.add_argument('--n_layers', type=int, required=True,
                         help='Number of hidden layers (1-10)')
     parser.add_argument('--seed', type=int, required=True,
@@ -377,7 +379,9 @@ def main():
     parser.add_argument('--num_workers', type=int, default=4,
                         help='Number of data loading workers (default: 4)')
 
+    print("Parsing arguments...", flush=True)
     args = parser.parse_args()
+    print(f"Arguments parsed: dataset={args.dataset}, n_layers={args.n_layers}, seed={args.seed}", flush=True)
 
     # Set random seeds
     torch.manual_seed(args.seed)
@@ -386,8 +390,9 @@ def main():
         torch.cuda.manual_seed(args.seed)
 
     # Set device
+    print("Setting device...", flush=True)
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
+    print(f"Using device: {device}", flush=True)
 
     # Scale learning rate based on batch size (linear scaling)
     scaled_lr = args.lr * (args.batch_size / 512)
@@ -440,6 +445,7 @@ def main():
     print(f"{'='*80}\n")
 
     # Create data loaders with dataset-specific augmentation
+    print("\nCreating data loaders...", flush=True)
     if args.dataset == 'cifar10':
         # CIFAR-10: Use standard augmentation (RandomCrop + HorizontalFlip)
         train_loader, test_loader = get_cifar10_dataloaders(
@@ -455,11 +461,13 @@ def main():
         eval_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=eval_transform)
     elif args.dataset == 'mnist':
         # MNIST: Minimal augmentation (slight rotation)
+        print("Loading MNIST data...", flush=True)
         train_loader, test_loader = get_mnist_dataloaders(
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             augment=True  # Uses RandomRotation(10)
         )
+        print("MNIST data loaded", flush=True)
         # Create evaluation loader (no augmentation, no shuffle for consistent MI evaluation)
         from torchvision import datasets, transforms
         eval_transform = transforms.Compose([
@@ -468,11 +476,14 @@ def main():
         ])
         eval_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=eval_transform)
 
+    print("Creating eval loader...", flush=True)
     eval_loader = torch.utils.data.DataLoader(
         eval_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
+    print("All data loaders created successfully", flush=True)
 
     # Setup optimizer (AdamW with selective weight decay)
+    print("Setting up optimizer...", flush=True)
     param_groups = separate_parameters_for_weight_decay(model)
     param_groups[0]['weight_decay'] = args.weight_decay  # Apply WD to Linear weights
 
