@@ -3,7 +3,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --job-name=exp5_mlp
-#SBATCH --array=1-50
+#SBATCH --array=1-100
 #SBATCH --output=logs/exp5_mlp_%A_%a.out
 #SBATCH --error=logs/exp5_mlp_%A_%a.err
 set -euo pipefail
@@ -37,20 +37,21 @@ mkdir -p data
 # 4.  Extract task-specific parameters
 # ---------------------------------------------------------------------
 # Format per line in jobs_exp5.txt:
-#   <n_layers> <seed>
+#   <n_layers> <seed> <dataset>
 n_layers=$(sed -n ${number}p "$paramfile" | awk '{print $1}')
 seed=$(sed -n ${number}p "$paramfile" | awk '{print $2}')
+dataset=$(sed -n ${number}p "$paramfile" | awk '{print $3}')
 
-if [[ -z "$n_layers" || -z "$seed" ]]; then
+if [[ -z "$n_layers" || -z "$seed" || -z "$dataset" ]]; then
   echo "Invalid job line at index $number in $paramfile" >&2
   exit 1
 fi
 
 date
-echo "Running exp5 MLP Variable: n_layers=$n_layers, seed=$seed"
+echo "Running exp5 MLP Variable: n_layers=$n_layers, seed=$seed, dataset=$dataset"
 
 # Define expected results path for conditional training
-results_file="results/exp5/mlp_layers${n_layers}_seed${seed}_results.npz"
+results_file="results/exp5/mlp_${dataset}_layers${n_layers}_seed${seed}_results.npz"
 
 # ---------------------------------------------------------------------
 # 5.  Train (conditional on results existence)
@@ -63,10 +64,11 @@ else
     python -u experiments/exp5_single_run.py \
         --n_layers "$n_layers" \
         --seed "$seed" \
+        --dataset "$dataset" \
         --batch_size 512 \
         --device cuda \
         --output_dir results/exp5 \
-        --epochs 200 \
+        --epochs 500 \
         --hidden_dim 256 \
         --dropout 0.3 \
         --lr 1e-3 \
@@ -82,8 +84,8 @@ else
         --num_workers 4
 
     date
-    echo "Training completed: MLP n_layers=$n_layers seed=$seed"
+    echo "Training completed: MLP n_layers=$n_layers seed=$seed dataset=$dataset"
 fi
 
 date
-echo "Job completed: MLP n_layers=$n_layers seed=$seed"
+echo "Job completed: MLP n_layers=$n_layers seed=$seed dataset=$dataset"

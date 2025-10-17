@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp5_mlp
-#$ -t 1-50
+#$ -t 1-100
 set -euo pipefail
 
 hostname
@@ -49,17 +49,18 @@ mkdir -p data
 # 4.  Extract task-specific parameters
 # ---------------------------------------------------------------------
 # Format per line in jobs_exp5.txt:
-#   <n_layers> <seed>
+#   <n_layers> <seed> <dataset>
 n_layers=$(sed -n ${number}p "$paramfile" | awk '{print $1}')
 seed=$(sed -n ${number}p "$paramfile" | awk '{print $2}')
+dataset=$(sed -n ${number}p "$paramfile" | awk '{print $3}')
 
-if [[ -z "$n_layers" || -z "$seed" ]]; then
+if [[ -z "$n_layers" || -z "$seed" || -z "$dataset" ]]; then
   echo "Invalid job line at index $number in $paramfile" >&2
   exit 1
 fi
 
 date
-echo "Running exp5 MLP Variable: n_layers=$n_layers, seed=$seed"
+echo "Running exp5 MLP Variable: n_layers=$n_layers, seed=$seed, dataset=$dataset"
 
 # ---------------------------------------------------------------------
 # 5.  Run single experiment
@@ -68,10 +69,11 @@ echo "Starting training..."
 python3.9 -u experiments/exp5_single_run.py \
     --n_layers "$n_layers" \
     --seed "$seed" \
+    --dataset "$dataset" \
     --batch_size 512 \
     --device cuda \
     --output_dir results/exp5 \
-    --epochs 200 \
+    --epochs 500 \
     --hidden_dim 256 \
     --dropout 0.3 \
     --lr 1e-3 \
@@ -87,4 +89,4 @@ python3.9 -u experiments/exp5_single_run.py \
     --num_workers 4
 
 date
-echo "Training completed: MLP n_layers=$n_layers seed=$seed"
+echo "Training completed: MLP n_layers=$n_layers seed=$seed dataset=$dataset"

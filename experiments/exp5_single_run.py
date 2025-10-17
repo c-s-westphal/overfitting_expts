@@ -1,10 +1,10 @@
 """
-Experiment 5: Variable-depth MLP models on CIFAR-10 with MI evaluation.
+Experiment 5: Variable-depth MLP models on CIFAR-10 and MNIST with MI evaluation.
 
 Studies how the number of hidden layers affects generalization in MLPs
 by masking neurons in the first hidden layer and computing mutual information.
 
-No special pixel - uses standard CIFAR-10 classification.
+No special pixel - uses standard CIFAR-10 or MNIST classification.
 """
 import torch
 import torch.nn as nn
@@ -18,8 +18,8 @@ from sklearn.metrics import mutual_info_score
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.mlp_cifar10 import MLP_CIFAR10
-from data.data_loader import get_cifar10_dataloaders
+from models.mlp_unified import MLP_Unified
+from data.data_loader import get_cifar10_dataloaders, get_mnist_dataloaders
 
 
 def cutmix_data(x, y, alpha=0.5):
@@ -178,7 +178,7 @@ def calculate_mutual_information(predictions, labels):
     """Calculate mutual information between predictions and true labels.
 
     Uses discrete mutual information: I(Y; predictions)
-    Maximum MI is log2(10) ≈ 3.32 bits for CIFAR-10.
+    Maximum MI is log2(10) ≈ 3.32 bits for 10 classes (CIFAR-10 and MNIST).
     """
     return mutual_info_score(labels, predictions)
 
@@ -326,12 +326,14 @@ def train_one_epoch(model, train_loader, criterion, optimizer, device, use_cutmi
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Experiment 5: Variable-depth MLP on CIFAR-10 with MI evaluation'
+        description='Experiment 5: Variable-depth MLP on CIFAR-10/MNIST with MI evaluation'
     )
     parser.add_argument('--n_layers', type=int, required=True,
                         help='Number of hidden layers (1-10)')
     parser.add_argument('--seed', type=int, required=True,
                         help='Random seed')
+    parser.add_argument('--dataset', type=str, required=True, choices=['cifar10', 'mnist'],
+                        help='Dataset to use (cifar10 or mnist)')
     parser.add_argument('--batch_size', type=int, default=512,
                         help='Batch size (default: 512)')
     parser.add_argument('--device', type=str, default='cuda',
@@ -346,8 +348,8 @@ def main():
                         help='Dropout probability (default: 0.3)')
 
     # Training parameters
-    parser.add_argument('--epochs', type=int, default=200,
-                        help='Number of training epochs (default: 200)')
+    parser.add_argument('--epochs', type=int, default=500,
+                        help='Maximum number of training epochs (default: 500)')
     parser.add_argument('--lr', type=float, default=1e-3,
                         help='Learning rate for batch 512 (default: 1e-3)')
     parser.add_argument('--weight_decay', type=float, default=0.01,
@@ -390,19 +392,36 @@ def main():
     # Scale learning rate based on batch size (linear scaling)
     scaled_lr = args.lr * (args.batch_size / 512)
 
+    # Determine dataset-specific parameters
+    if args.dataset == 'cifar10':
+        input_dim = 3072  # 3x32x32
+        num_classes = 10
+        use_cutmix = True
+        target_train_acc = 95.0  # CIFAR-10 with label smoothing, target 95%
+    elif args.dataset == 'mnist':
+        input_dim = 784  # 1x28x28
+        num_classes = 10
+        use_cutmix = False  # CutMix not typically used for MNIST
+        target_train_acc = 99.99  # MNIST is easier, target 99.99%
+    else:
+        raise ValueError(f"Unknown dataset: {args.dataset}")
+
     # Create model
-    model = MLP_CIFAR10(
-        num_classes=10,
+    model = MLP_Unified(
+        num_classes=num_classes,
         n_layers=args.n_layers,
         hidden_dim=args.hidden_dim,
-        dropout=args.dropout
+        dropout=args.dropout,
+        input_dim=input_dim
     )
     model = model.to(device)
 
     print(f"\n{'='*80}")
-    print(f"Experiment 5: MLP Variable Depth on CIFAR-10")
+    print(f"Experiment 5: MLP Variable Depth on {args.dataset.upper()}")
     print(f"{'='*80}")
+    print(f"Dataset:          {args.dataset.upper()}")
     print(f"Architecture:     MLP with LayerNorm and residual connections")
+    print(f"Input Dim:        {input_dim}")
     print(f"Hidden Layers:    {args.n_layers}")
     print(f"Hidden Dim:       {args.hidden_dim}")
     print(f"Dropout:          {args.dropout}")
@@ -414,23 +433,41 @@ def main():
     print(f"Grad Clip:        {args.grad_clip}")
     print(f"Warmup Epochs:    {args.warmup_epochs}")
     print(f"Label Smoothing:  {args.label_smoothing}")
-    print(f"Epochs:           {args.epochs}")
+    print(f"Use CutMix:       {use_cutmix}")
+    print(f"Max Epochs:       {args.epochs}")
+    print(f"Target Train Acc: {target_train_acc}%")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
 
-    # Create data loaders (with basic augmentation)
-    train_loader, test_loader = get_cifar10_dataloaders(
-        batch_size=args.batch_size,
-        num_workers=args.num_workers
-    )
+    # Create data loaders with dataset-specific augmentation
+    if args.dataset == 'cifar10':
+        # CIFAR-10: Use standard augmentation (RandomCrop + HorizontalFlip)
+        train_loader, test_loader = get_cifar10_dataloaders(
+            batch_size=args.batch_size,
+            num_workers=args.num_workers
+        )
+        # Create evaluation loader (no augmentation, no shuffle for consistent MI evaluation)
+        from torchvision import datasets, transforms
+        eval_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+        eval_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=eval_transform)
+    elif args.dataset == 'mnist':
+        # MNIST: Minimal augmentation (slight rotation)
+        train_loader, test_loader = get_mnist_dataloaders(
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            augment=True  # Uses RandomRotation(10)
+        )
+        # Create evaluation loader (no augmentation, no shuffle for consistent MI evaluation)
+        from torchvision import datasets, transforms
+        eval_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ])
+        eval_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=eval_transform)
 
-    # Create evaluation loader (no augmentation, no shuffle for consistent MI evaluation)
-    from torchvision import datasets, transforms
-    eval_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ])
-    eval_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=eval_transform)
     eval_loader = torch.utils.data.DataLoader(
         eval_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
@@ -475,29 +512,38 @@ def main():
     test_acc_history = []
     gen_gap_history = []
     epochs_evaluated = []
+    epoch_reached_target = None
 
     # Training loop
-    print(f"\nStarting training for {args.epochs} epochs...")
+    print(f"\nStarting training for up to {args.epochs} epochs (or until {target_train_acc}% train acc)...")
     print("="*70)
 
     for epoch in range(1, args.epochs + 1):
-        # Train
-        train_loss, train_acc = train_one_epoch(
+        # Train (use CutMix only for CIFAR-10)
+        train_loss, train_acc_augmented = train_one_epoch(
             model, train_loader, criterion, optimizer, device,
-            use_cutmix=True, cutmix_alpha=0.5, grad_clip=args.grad_clip
+            use_cutmix=use_cutmix, cutmix_alpha=0.5, grad_clip=args.grad_clip
         )
 
         # Step scheduler
         scheduler.step()
 
-        # Evaluate accuracy on test set
+        # Evaluate accuracy on clean data (no augmentation, eval mode)
+        train_acc = evaluate_accuracy(model, eval_loader, device)
         test_acc = evaluate_accuracy(model, test_loader, device)
         gen_gap = train_acc - test_acc
+
+        # Check if target train accuracy reached (on clean data)
+        if train_acc >= target_train_acc and epoch_reached_target is None:
+            epoch_reached_target = epoch
+            print(f"\n{'='*70}")
+            print(f"Target train accuracy {target_train_acc}% reached at epoch {epoch}!")
+            print(f"{'='*70}\n")
 
         # Evaluate MI and print progress at specified intervals
         if epoch % args.eval_interval == 0 or epoch == 1 or epoch == args.epochs:
             print(f"Epoch {epoch}/{args.epochs}: "
-                  f"Train Acc: {train_acc:.2f}%, "
+                  f"Train Acc (clean): {train_acc:.2f}%, "
                   f"Test Acc: {test_acc:.2f}%, "
                   f"Gen Gap: {gen_gap:.2f}%")
 
@@ -518,8 +564,19 @@ def main():
                 gen_gap_history.append(gen_gap)
                 epochs_evaluated.append(epoch)
 
+        # Early stopping if target accuracy reached
+        if train_acc >= target_train_acc:
+            print(f"\n{'='*70}")
+            print(f"Stopping early: Target train accuracy {target_train_acc}% reached at epoch {epoch}")
+            print(f"{'='*70}\n")
+            break
+
     print("\n" + "="*70)
-    print("Training completed!")
+    if epoch_reached_target is not None:
+        print(f"Training completed! Target accuracy reached at epoch {epoch_reached_target}")
+    else:
+        print(f"Training completed! Maximum epochs ({args.epochs}) reached")
+        print(f"Final train accuracy: {train_acc:.2f}%")
 
     # Final MI evaluation with more masks and batches
     print(f"\nFinal MI evaluation (n_masks={args.n_masks_final}, max_batches={args.max_eval_batches_final})...")
@@ -547,22 +604,27 @@ def main():
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
 
-    save_path = f"{args.output_dir}/mlp_layers{args.n_layers}_seed{args.seed}_results.npz"
+    save_path = f"{args.output_dir}/mlp_{args.dataset}_layers{args.n_layers}_seed{args.seed}_results.npz"
 
     result = {
-        'model': 'MLP_CIFAR10',
+        'model': f'MLP_Unified',
+        'dataset': args.dataset,
         'n_layers': args.n_layers,
         'hidden_dim': args.hidden_dim,
         'dropout': args.dropout,
         'seed': args.seed,
         'num_parameters': model.count_parameters(),
-        'epochs': args.epochs,
+        'max_epochs': args.epochs,
+        'target_train_acc': target_train_acc,
+        'epochs_trained': epoch,
+        'epoch_reached_target': epoch_reached_target if epoch_reached_target is not None else -1,
         'batch_size': args.batch_size,
         'lr': scaled_lr,
         'weight_decay': args.weight_decay,
         'grad_clip': args.grad_clip,
         'warmup_epochs': args.warmup_epochs,
         'label_smoothing': args.label_smoothing,
+        'use_cutmix': use_cutmix,
         'final_train_acc': final_train_acc,
         'final_test_acc': final_test_acc,
         'final_gen_gap': final_gen_gap,
