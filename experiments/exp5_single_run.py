@@ -402,7 +402,7 @@ def main():
         input_dim = 3072  # 3x32x32
         num_classes = 10
         use_cutmix = True
-        target_train_acc = 95.0  # CIFAR-10 with label smoothing, target 95%
+        target_train_acc = 99.0  # CIFAR-10 target 99%
     elif args.dataset == 'mnist':
         input_dim = 784  # 1x28x28
         num_classes = 10
@@ -432,6 +432,7 @@ def main():
     print(f"Dropout:          {args.dropout}")
     print(f"Total Params:     {model.count_parameters():,}")
     print(f"Seed:             {args.seed}")
+    print(f"Train Subset:     First 10,000 training images")
     print(f"Batch Size:       {args.batch_size}")
     print(f"Learning Rate:    {scaled_lr:.6f} (scaled from {args.lr} for batch {args.batch_size})")
     print(f"Weight Decay:     {args.weight_decay}")
@@ -441,52 +442,79 @@ def main():
     print(f"Use CutMix:       {use_cutmix}")
     print(f"Max Epochs:       {args.epochs}")
     print(f"Target Train Acc: {target_train_acc}%")
-    print(f"Eval Subset:      10,000 training images")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
 
     # Create data loaders with dataset-specific augmentation
     print("\nCreating data loaders...", flush=True)
+    from torchvision import datasets, transforms
+
+    # Training subset size: first 10,000 images
+    train_subset_size = 10000
+    train_indices = list(range(train_subset_size))
+
     if args.dataset == 'cifar10':
         # CIFAR-10: Use standard augmentation (RandomCrop + HorizontalFlip)
-        train_loader, test_loader = get_cifar10_dataloaders(
-            batch_size=args.batch_size,
-            num_workers=args.num_workers
-        )
-        # Create evaluation loader (no augmentation, no shuffle for consistent MI evaluation)
-        from torchvision import datasets, transforms
+        train_transform = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
         eval_transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
-        eval_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=eval_transform)
+        test_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        # Load datasets
+        train_dataset_full = datasets.CIFAR10(root='./data', train=True, download=True, transform=train_transform)
+        eval_dataset_full = datasets.CIFAR10(root='./data', train=True, download=True, transform=eval_transform)
+        test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
+
     elif args.dataset == 'mnist':
         # MNIST: Minimal augmentation (slight rotation)
         print("Loading MNIST data...", flush=True)
-        train_loader, test_loader = get_mnist_dataloaders(
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            augment=True  # Uses RandomRotation(10)
-        )
-        print("MNIST data loaded", flush=True)
-        # Create evaluation loader (no augmentation, no shuffle for consistent MI evaluation)
-        from torchvision import datasets, transforms
+        train_transform = transforms.Compose([
+            transforms.RandomRotation(10),
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ])
         eval_transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,)),
         ])
-        eval_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=eval_transform)
+        test_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ])
 
-    print("Creating eval loader with 10,000 training images subset...", flush=True)
-    # Create subset of first 10,000 training images for evaluation
-    eval_subset_size = 10000
-    eval_indices = list(range(eval_subset_size))
-    eval_subset = torch.utils.data.Subset(eval_dataset, eval_indices)
+        # Load datasets
+        train_dataset_full = datasets.MNIST(root='./data', train=True, download=True, transform=train_transform)
+        eval_dataset_full = datasets.MNIST(root='./data', train=True, download=True, transform=eval_transform)
+        test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=test_transform)
+        print("MNIST data loaded", flush=True)
 
+    print(f"Creating training subset with first {train_subset_size} images...", flush=True)
+    # Create subsets of first 10,000 training images
+    train_subset = torch.utils.data.Subset(train_dataset_full, train_indices)
+    eval_subset = torch.utils.data.Subset(eval_dataset_full, train_indices)
+
+    # Create data loaders
+    train_loader = torch.utils.data.DataLoader(
+        train_subset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
+    )
     eval_loader = torch.utils.data.DataLoader(
         eval_subset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
-    print(f"Eval loader created with {eval_subset_size} training images", flush=True)
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+    )
+
+    print(f"Data loaders created: train={train_subset_size} images, test={len(test_dataset)} images", flush=True)
 
     # Setup optimizer (AdamW with selective weight decay)
     print("Setting up optimizer...", flush=True)
