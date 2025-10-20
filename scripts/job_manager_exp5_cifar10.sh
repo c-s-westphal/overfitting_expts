@@ -75,7 +75,7 @@ python3.9 -u experiments/exp5_single_run.py \
     --output_dir results/exp5 \
     --epochs 500 \
     --hidden_dim 8 \
-    --dropout 0.3 \
+    --dropout 0.0 \
     --lr 1e-3 \
     --weight_decay 0.01 \
     --grad_clip 1.0 \
