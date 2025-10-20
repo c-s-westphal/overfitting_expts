@@ -441,6 +441,7 @@ def main():
     print(f"Use CutMix:       {use_cutmix}")
     print(f"Max Epochs:       {args.epochs}")
     print(f"Target Train Acc: {target_train_acc}%")
+    print(f"Eval Subset:      10,000 training images")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
 
@@ -476,11 +477,16 @@ def main():
         ])
         eval_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=eval_transform)
 
-    print("Creating eval loader...", flush=True)
+    print("Creating eval loader with 10,000 training images subset...", flush=True)
+    # Create subset of first 10,000 training images for evaluation
+    eval_subset_size = 10000
+    eval_indices = list(range(eval_subset_size))
+    eval_subset = torch.utils.data.Subset(eval_dataset, eval_indices)
+
     eval_loader = torch.utils.data.DataLoader(
-        eval_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+        eval_subset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
-    print("All data loaders created successfully", flush=True)
+    print(f"Eval loader created with {eval_subset_size} training images", flush=True)
 
     # Setup optimizer (AdamW with selective weight decay)
     print("Setting up optimizer...", flush=True)
