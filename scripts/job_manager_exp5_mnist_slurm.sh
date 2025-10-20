@@ -3,7 +3,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --job-name=exp5_mlp_mnist
-#SBATCH --array=1-50
+#SBATCH --array=1-45
 #SBATCH --output=logs/exp5_mlp_mnist_%A_%a.out
 #SBATCH --error=logs/exp5_mlp_mnist_%A_%a.err
 set -euo pipefail

@@ -25,11 +25,12 @@ class ResidualMLPBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
+        identity = x
         out = self.norm(x)
         out = self.linear(out)
         out = self.relu(out)
         out = self.dropout(out)
-        # No residual connection
+        out = out + identity  # Residual connection
         return out
 
 
@@ -140,15 +141,22 @@ class MLP_Unified(nn.Module):
         return x
 
     def get_first_hidden_layer(self):
-        """Get the first hidden layer output (after input projection and activation).
+        """Get the first hidden layer output (after first residual block).
 
         This is used for masking and MI evaluation.
 
         Returns:
             The module after which to hook for first hidden layer output.
-            Returns the input_dropout module.
+            Returns blocks[0] (requires n_layers >= 2).
+
+        Raises:
+            ValueError: If n_layers < 2 (no residual blocks exist).
         """
-        return self.input_dropout
+        if len(self.blocks) > 0:
+            return self.blocks[0]
+        else:
+            raise ValueError(f"Masking requires n_layers >= 2 to mask after first residual block. "
+                           f"Got n_layers={self.n_layers}")
 
     def count_parameters(self):
         """Count total trainable parameters."""

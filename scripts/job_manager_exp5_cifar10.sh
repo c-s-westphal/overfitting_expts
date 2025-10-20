@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp5_mlp_cifar10
-#$ -t 1-50
+#$ -t 1-45
 set -euo pipefail
 
 hostname
