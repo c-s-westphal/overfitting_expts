@@ -82,6 +82,32 @@ class LabelSmoothingCrossEntropy(nn.Module):
         return loss
 
 
+def generate_all_neuron_subsets(n_neurons):
+    """Generate all possible non-empty subsets of neurons.
+
+    For small n_neurons (e.g., 8), this generates all 2^n - 1 possible subsets.
+    Each mask has True = keep neuron, False = zero out neuron.
+
+    Args:
+        n_neurons: Number of neurons in the layer
+
+    Returns:
+        List of boolean masks, one for each non-empty subset
+    """
+    masks = []
+    # Generate all possible subsets (2^n combinations)
+    # Skip 0 (empty set) by starting from 1
+    for i in range(1, 2**n_neurons):
+        mask = np.zeros(n_neurons, dtype=bool)
+        # Convert integer to binary representation
+        for bit_pos in range(n_neurons):
+            if i & (1 << bit_pos):
+                mask[bit_pos] = True
+        masks.append(mask)
+
+    return masks
+
+
 def generate_random_neuron_masks(n_neurons, n_masks, seed=42):
     """Generate random masks for neuron selection in first hidden layer.
 
@@ -186,6 +212,9 @@ def calculate_mutual_information(predictions, labels):
 def evaluate_first_layer_mi(model, eval_loader, device, n_subsets, seed=42, max_batches=0):
     """Evaluate MI difference between full and masked first hidden layer.
 
+    For small hidden_dim (<=16), evaluates all possible subsets.
+    For larger hidden_dim, randomly samples n_subsets masks.
+
     Returns:
         (mi_full, mean_mi_masked, mi_difference)
     """
@@ -194,8 +223,13 @@ def evaluate_first_layer_mi(model, eval_loader, device, n_subsets, seed=42, max_
     # Determine first layer dimensions
     n_neurons = model.hidden_dim
 
-    # Generate neuron masks
-    masks = generate_random_neuron_masks(n_neurons, n_subsets, seed)
+    # Generate neuron masks: use all subsets for small n_neurons, random sampling otherwise
+    if n_neurons <= 16:
+        masks = generate_all_neuron_subsets(n_neurons)
+        print(f"  Using all {len(masks)} possible subsets for {n_neurons} neurons", flush=True)
+    else:
+        masks = generate_random_neuron_masks(n_neurons, n_subsets, seed)
+        print(f"  Using {len(masks)} random subsets for {n_neurons} neurons", flush=True)
 
     # Get predictions for full model
     full_predictions, labels = get_predictions_and_labels(
@@ -574,9 +608,9 @@ def main():
 
             # Evaluate MI (skip at final epoch since we do comprehensive MI eval after loop)
             if epoch != args.epochs:
-                print(f"  Evaluating MI on test set (n_masks={args.n_masks_train}, max_batches={args.max_eval_batches_train})...", flush=True)
+                print(f"  Evaluating MI on train subset (n_masks={args.n_masks_train}, max_batches={args.max_eval_batches_train})...", flush=True)
                 mi_full, mean_mi_masked, mi_diff = evaluate_first_layer_mi(
-                    model, test_loader, device,
+                    model, eval_loader, device,
                     n_subsets=args.n_masks_train,
                     seed=args.seed + epoch,  # Different seed each time
                     max_batches=args.max_eval_batches_train
@@ -603,10 +637,10 @@ def main():
         print(f"Final train accuracy: {train_acc:.2f}%")
     print("="*70)
 
-    # Final MI evaluation with more masks and batches (on test set)
-    print(f"\nFinal MI evaluation on test set (n_masks={args.n_masks_final}, max_batches={args.max_eval_batches_final})...", flush=True)
+    # Final MI evaluation with more masks and batches (on train subset)
+    print(f"\nFinal MI evaluation on train subset (n_masks={args.n_masks_final}, max_batches={args.max_eval_batches_final})...", flush=True)
     final_mi_full, final_mean_mi_masked, final_mi_diff = evaluate_first_layer_mi(
-        model, test_loader, device,
+        model, eval_loader, device,
         n_subsets=args.n_masks_final,
         seed=args.seed,
         max_batches=args.max_eval_batches_final
