@@ -209,11 +209,17 @@ def calculate_mutual_information(predictions, labels):
     return mutual_info_score(labels, predictions)
 
 
-def evaluate_first_layer_mi(model, eval_loader, device, n_subsets, seed=42, max_batches=0):
+def evaluate_first_layer_mi(model, eval_loader, device, n_subsets, seed=42, max_batches=0, use_all_subsets=False):
     """Evaluate MI difference between full and masked first hidden layer.
 
-    For small hidden_dim (<=16), evaluates all possible subsets.
-    For larger hidden_dim, randomly samples n_subsets masks.
+    Args:
+        model: The model to evaluate
+        eval_loader: Data loader for evaluation
+        device: Device to use
+        n_subsets: Number of random subsets to use (if use_all_subsets=False)
+        seed: Random seed for subset generation
+        max_batches: Maximum batches to evaluate (0 = all)
+        use_all_subsets: If True, use all possible subsets for small networks (<=16 neurons)
 
     Returns:
         (mi_full, mean_mi_masked, mi_difference)
@@ -223,8 +229,8 @@ def evaluate_first_layer_mi(model, eval_loader, device, n_subsets, seed=42, max_
     # Determine first layer dimensions
     n_neurons = model.hidden_dim
 
-    # Generate neuron masks: use all subsets for small n_neurons, random sampling otherwise
-    if n_neurons <= 16:
+    # Generate neuron masks
+    if use_all_subsets and n_neurons <= 16:
         masks = generate_all_neuron_subsets(n_neurons)
         print(f"  Using all {len(masks)} possible subsets for {n_neurons} neurons", flush=True)
     else:
@@ -613,7 +619,8 @@ def main():
                     model, eval_loader, device,
                     n_subsets=args.n_masks_train,
                     seed=args.seed + epoch,  # Different seed each time
-                    max_batches=args.max_eval_batches_train
+                    max_batches=args.max_eval_batches_train,
+                    use_all_subsets=False  # Use random subsets during training for speed
                 )
                 print(f"  MI: {mi_full:.6f}, MI_masked: {mean_mi_masked:.6f}, MI_diff: {mi_diff:.6f}", flush=True)
 
@@ -637,13 +644,14 @@ def main():
         print(f"Final train accuracy: {train_acc:.2f}%")
     print("="*70)
 
-    # Final MI evaluation with more masks and batches (on train subset)
-    print(f"\nFinal MI evaluation on train subset (n_masks={args.n_masks_final}, max_batches={args.max_eval_batches_final})...", flush=True)
+    # Final MI evaluation with all possible subsets and all batches (on train subset)
+    print(f"\nFinal MI evaluation on train subset (all subsets, all batches)...", flush=True)
     final_mi_full, final_mean_mi_masked, final_mi_diff = evaluate_first_layer_mi(
         model, eval_loader, device,
-        n_subsets=args.n_masks_final,
+        n_subsets=args.n_masks_final,  # Ignored when use_all_subsets=True
         seed=args.seed,
-        max_batches=args.max_eval_batches_final
+        max_batches=0,  # Use all batches for final evaluation
+        use_all_subsets=True  # Use all possible subsets for final evaluation
     )
 
     print(f"Final MI: {final_mi_full:.6f}", flush=True)
