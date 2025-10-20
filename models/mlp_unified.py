@@ -9,9 +9,9 @@ import torch.nn as nn
 
 
 class ResidualMLPBlock(nn.Module):
-    """Residual MLP block with pre-activation LayerNorm.
+    """MLP block with pre-activation LayerNorm (no residual connection).
 
-    Architecture: LayerNorm -> Linear -> ReLU -> Dropout -> residual connection
+    Architecture: LayerNorm -> Linear -> ReLU -> Dropout
 
     Args:
         hidden_dim (int): Hidden dimension size
@@ -25,12 +25,11 @@ class ResidualMLPBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        identity = x
         out = self.norm(x)
         out = self.linear(out)
         out = self.relu(out)
         out = self.dropout(out)
-        out = out + identity  # Residual connection
+        # No residual connection
         return out
 
 
