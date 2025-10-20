@@ -429,13 +429,14 @@ def main():
     print(f"Total Params:     {model.count_parameters():,}")
     print(f"Seed:             {args.seed}")
     print(f"Train Subset:     First 10,000 training images (no augmentation)")
+    print(f"Target Train Acc: 99.99%")
     print(f"Batch Size:       {args.batch_size}")
     print(f"Learning Rate:    {scaled_lr:.6f} (scaled from {args.lr} for batch {args.batch_size})")
     print(f"Weight Decay:     {args.weight_decay}")
     print(f"Grad Clip:        {args.grad_clip}")
     print(f"Warmup Epochs:    {args.warmup_epochs}")
     print(f"Label Smoothing:  {args.label_smoothing}")
-    print(f"Epochs:           {args.epochs}")
+    print(f"Max Epochs:       {args.epochs}")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
 
@@ -487,6 +488,10 @@ def main():
     train_loader = torch.utils.data.DataLoader(
         train_subset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
     )
+    # Eval loader: same as train_loader but no shuffle for consistent evaluation
+    eval_loader = torch.utils.data.DataLoader(
+        train_subset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+    )
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
@@ -530,11 +535,14 @@ def main():
 
     # Tracking
     mi_history = []
+    train_acc_history = []
     test_acc_history = []
     epochs_evaluated = []
+    epoch_reached_target = None
 
     # Training loop
-    print(f"\nStarting training for {args.epochs} epochs...")
+    target_train_acc = 99.99
+    print(f"\nStarting training (target: {target_train_acc}% train acc, max: {args.epochs} epochs)...")
     print("="*70)
 
     for epoch in range(1, args.epochs + 1):
@@ -547,34 +555,56 @@ def main():
         # Step scheduler
         scheduler.step()
 
+        # Evaluate train accuracy
+        train_acc = evaluate_accuracy(model, eval_loader, device)
+
+        # Check if target reached
+        if train_acc >= target_train_acc and epoch_reached_target is None:
+            epoch_reached_target = epoch
+            print(f"\n{'='*70}", flush=True)
+            print(f"Target train accuracy {target_train_acc}% reached at epoch {epoch}!", flush=True)
+            print(f"{'='*70}\n", flush=True)
+
         # Evaluate MI and print progress at specified intervals
         if epoch % args.eval_interval == 0 or epoch == 1 or epoch == args.epochs:
             # Evaluate test accuracy
             test_acc = evaluate_accuracy(model, test_loader, device)
 
-            print(f"Epoch {epoch}/{args.epochs}: Test Acc: {test_acc:.2f}%")
+            print(f"Epoch {epoch}/{args.epochs}: Train Acc: {train_acc:.2f}%, Test Acc: {test_acc:.2f}%", flush=True)
 
             # Evaluate MI (skip at final epoch since we do comprehensive MI eval after loop)
             if epoch != args.epochs:
-                print(f"  Evaluating MI (n_masks={args.n_masks_train}, max_batches={args.max_eval_batches_train})...")
+                print(f"  Evaluating MI on test set (n_masks={args.n_masks_train}, max_batches={args.max_eval_batches_train})...", flush=True)
                 mi_full, mean_mi_masked, mi_diff = evaluate_first_layer_mi(
                     model, test_loader, device,
                     n_subsets=args.n_masks_train,
                     seed=args.seed + epoch,  # Different seed each time
                     max_batches=args.max_eval_batches_train
                 )
-                print(f"  MI: {mi_full:.6f}, MI_masked: {mean_mi_masked:.6f}, MI_diff: {mi_diff:.6f}")
+                print(f"  MI: {mi_full:.6f}, MI_masked: {mean_mi_masked:.6f}, MI_diff: {mi_diff:.6f}", flush=True)
 
                 mi_history.append(mi_diff)
+                train_acc_history.append(train_acc)
                 test_acc_history.append(test_acc)
                 epochs_evaluated.append(epoch)
 
+        # Early stopping if target accuracy reached
+        if train_acc >= target_train_acc:
+            print(f"\n{'='*70}", flush=True)
+            print(f"Stopping early: Target train accuracy {target_train_acc}% reached at epoch {epoch}", flush=True)
+            print(f"{'='*70}\n", flush=True)
+            break
+
     print("\n" + "="*70)
-    print(f"Training completed! {args.epochs} epochs finished")
+    if epoch_reached_target is not None:
+        print(f"Training completed! Target accuracy reached at epoch {epoch_reached_target}")
+    else:
+        print(f"Training completed! Maximum epochs ({args.epochs}) reached")
+        print(f"Final train accuracy: {train_acc:.2f}%")
     print("="*70)
 
-    # Final MI evaluation with more masks and batches
-    print(f"\nFinal MI evaluation (n_masks={args.n_masks_final}, max_batches={args.max_eval_batches_final})...")
+    # Final MI evaluation with more masks and batches (on test set)
+    print(f"\nFinal MI evaluation on test set (n_masks={args.n_masks_final}, max_batches={args.max_eval_batches_final})...", flush=True)
     final_mi_full, final_mean_mi_masked, final_mi_diff = evaluate_first_layer_mi(
         model, test_loader, device,
         n_subsets=args.n_masks_final,
@@ -582,15 +612,19 @@ def main():
         max_batches=args.max_eval_batches_final
     )
 
-    print(f"Final MI: {final_mi_full:.6f}")
-    print(f"Final MI_masked: {final_mean_mi_masked:.6f}")
-    print(f"Final MI_diff: {final_mi_diff:.6f}")
+    print(f"Final MI: {final_mi_full:.6f}", flush=True)
+    print(f"Final MI_masked: {final_mean_mi_masked:.6f}", flush=True)
+    print(f"Final MI_diff: {final_mi_diff:.6f}", flush=True)
 
     # Final accuracy evaluation
+    final_train_acc = evaluate_accuracy(model, eval_loader, device)
     final_test_acc = evaluate_accuracy(model, test_loader, device)
+    final_gen_gap = final_train_acc - final_test_acc
 
-    print(f"\nFinal Results:")
-    print(f"  Test Acc:  {final_test_acc:.2f}%")
+    print(f"\nFinal Results:", flush=True)
+    print(f"  Train Acc: {final_train_acc:.2f}%", flush=True)
+    print(f"  Test Acc:  {final_test_acc:.2f}%", flush=True)
+    print(f"  Gen Gap:   {final_gen_gap:.2f}%", flush=True)
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
@@ -606,7 +640,9 @@ def main():
         'seed': args.seed,
         'num_parameters': model.count_parameters(),
         'max_epochs': args.epochs,
-        'epochs_trained': args.epochs,
+        'target_train_acc': target_train_acc,
+        'epochs_trained': epoch,
+        'epoch_reached_target': epoch_reached_target if epoch_reached_target is not None else -1,
         'batch_size': args.batch_size,
         'lr': scaled_lr,
         'weight_decay': args.weight_decay,
@@ -614,17 +650,20 @@ def main():
         'warmup_epochs': args.warmup_epochs,
         'label_smoothing': args.label_smoothing,
         'train_subset_size': train_subset_size,
+        'final_train_acc': final_train_acc,
         'final_test_acc': final_test_acc,
+        'final_gen_gap': final_gen_gap,
         'final_mi_full': final_mi_full,
         'final_mean_mi_masked': final_mean_mi_masked,
         'final_mi_diff': final_mi_diff,
         'epochs_evaluated': np.array(epochs_evaluated),
         'mi_history': np.array(mi_history),
+        'train_acc_history': np.array(train_acc_history),
         'test_acc_history': np.array(test_acc_history),
     }
 
     np.savez(save_path, **result)
-    print(f"\nResults saved to: {save_path}\n")
+    print(f"\nResults saved to: {save_path}\n", flush=True)
 
 
 if __name__ == "__main__":
