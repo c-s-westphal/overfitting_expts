@@ -401,13 +401,9 @@ def main():
     if args.dataset == 'cifar10':
         input_dim = 3072  # 3x32x32
         num_classes = 10
-        use_cutmix = True
-        target_train_acc = 99.0  # CIFAR-10 target 99%
     elif args.dataset == 'mnist':
         input_dim = 784  # 1x28x28
         num_classes = 10
-        use_cutmix = False  # CutMix not typically used for MNIST
-        target_train_acc = 99.99  # MNIST is easier, target 99.99%
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
 
@@ -432,16 +428,14 @@ def main():
     print(f"Dropout:          {args.dropout}")
     print(f"Total Params:     {model.count_parameters():,}")
     print(f"Seed:             {args.seed}")
-    print(f"Train Subset:     First 10,000 training images")
+    print(f"Train Subset:     First 10,000 training images (no augmentation)")
     print(f"Batch Size:       {args.batch_size}")
     print(f"Learning Rate:    {scaled_lr:.6f} (scaled from {args.lr} for batch {args.batch_size})")
     print(f"Weight Decay:     {args.weight_decay}")
     print(f"Grad Clip:        {args.grad_clip}")
     print(f"Warmup Epochs:    {args.warmup_epochs}")
     print(f"Label Smoothing:  {args.label_smoothing}")
-    print(f"Use CutMix:       {use_cutmix}")
-    print(f"Max Epochs:       {args.epochs}")
-    print(f"Target Train Acc: {target_train_acc}%")
+    print(f"Epochs:           {args.epochs}")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
 
@@ -454,14 +448,8 @@ def main():
     train_indices = list(range(train_subset_size))
 
     if args.dataset == 'cifar10':
-        # CIFAR-10: Use standard augmentation (RandomCrop + HorizontalFlip)
+        # CIFAR-10: No augmentation, clean images only
         train_transform = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
-        eval_transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
@@ -472,18 +460,12 @@ def main():
 
         # Load datasets
         train_dataset_full = datasets.CIFAR10(root='./data', train=True, download=True, transform=train_transform)
-        eval_dataset_full = datasets.CIFAR10(root='./data', train=True, download=True, transform=eval_transform)
         test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
 
     elif args.dataset == 'mnist':
-        # MNIST: Minimal augmentation (slight rotation)
+        # MNIST: No augmentation, clean images only
         print("Loading MNIST data...", flush=True)
         train_transform = transforms.Compose([
-            transforms.RandomRotation(10),
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-        ])
-        eval_transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,)),
         ])
@@ -494,21 +476,16 @@ def main():
 
         # Load datasets
         train_dataset_full = datasets.MNIST(root='./data', train=True, download=True, transform=train_transform)
-        eval_dataset_full = datasets.MNIST(root='./data', train=True, download=True, transform=eval_transform)
         test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=test_transform)
         print("MNIST data loaded", flush=True)
 
     print(f"Creating training subset with first {train_subset_size} images...", flush=True)
-    # Create subsets of first 10,000 training images
+    # Create subset of first 10,000 training images
     train_subset = torch.utils.data.Subset(train_dataset_full, train_indices)
-    eval_subset = torch.utils.data.Subset(eval_dataset_full, train_indices)
 
     # Create data loaders
     train_loader = torch.utils.data.DataLoader(
         train_subset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
-    )
-    eval_loader = torch.utils.data.DataLoader(
-        eval_subset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
@@ -553,50 +530,35 @@ def main():
 
     # Tracking
     mi_history = []
-    train_acc_history = []
     test_acc_history = []
-    gen_gap_history = []
     epochs_evaluated = []
-    epoch_reached_target = None
 
     # Training loop
-    print(f"\nStarting training for up to {args.epochs} epochs (or until {target_train_acc}% train acc)...")
+    print(f"\nStarting training for {args.epochs} epochs...")
     print("="*70)
 
     for epoch in range(1, args.epochs + 1):
-        # Train (use CutMix only for CIFAR-10)
-        train_loss, train_acc_augmented = train_one_epoch(
+        # Train (no augmentation)
+        train_loss, _ = train_one_epoch(
             model, train_loader, criterion, optimizer, device,
-            use_cutmix=use_cutmix, cutmix_alpha=0.5, grad_clip=args.grad_clip
+            use_cutmix=False, cutmix_alpha=0.5, grad_clip=args.grad_clip
         )
 
         # Step scheduler
         scheduler.step()
 
-        # Evaluate accuracy on clean data (no augmentation, eval mode)
-        train_acc = evaluate_accuracy(model, eval_loader, device)
-        test_acc = evaluate_accuracy(model, test_loader, device)
-        gen_gap = train_acc - test_acc
-
-        # Check if target train accuracy reached (on clean data)
-        if train_acc >= target_train_acc and epoch_reached_target is None:
-            epoch_reached_target = epoch
-            print(f"\n{'='*70}")
-            print(f"Target train accuracy {target_train_acc}% reached at epoch {epoch}!")
-            print(f"{'='*70}\n")
-
         # Evaluate MI and print progress at specified intervals
         if epoch % args.eval_interval == 0 or epoch == 1 or epoch == args.epochs:
-            print(f"Epoch {epoch}/{args.epochs}: "
-                  f"Train Acc (clean): {train_acc:.2f}%, "
-                  f"Test Acc: {test_acc:.2f}%, "
-                  f"Gen Gap: {gen_gap:.2f}%")
+            # Evaluate test accuracy
+            test_acc = evaluate_accuracy(model, test_loader, device)
+
+            print(f"Epoch {epoch}/{args.epochs}: Test Acc: {test_acc:.2f}%")
 
             # Evaluate MI (skip at final epoch since we do comprehensive MI eval after loop)
             if epoch != args.epochs:
                 print(f"  Evaluating MI (n_masks={args.n_masks_train}, max_batches={args.max_eval_batches_train})...")
                 mi_full, mean_mi_masked, mi_diff = evaluate_first_layer_mi(
-                    model, eval_loader, device,
+                    model, test_loader, device,
                     n_subsets=args.n_masks_train,
                     seed=args.seed + epoch,  # Different seed each time
                     max_batches=args.max_eval_batches_train
@@ -604,29 +566,17 @@ def main():
                 print(f"  MI: {mi_full:.6f}, MI_masked: {mean_mi_masked:.6f}, MI_diff: {mi_diff:.6f}")
 
                 mi_history.append(mi_diff)
-                train_acc_history.append(train_acc)
                 test_acc_history.append(test_acc)
-                gen_gap_history.append(gen_gap)
                 epochs_evaluated.append(epoch)
 
-        # Early stopping if target accuracy reached
-        if train_acc >= target_train_acc:
-            print(f"\n{'='*70}")
-            print(f"Stopping early: Target train accuracy {target_train_acc}% reached at epoch {epoch}")
-            print(f"{'='*70}\n")
-            break
-
     print("\n" + "="*70)
-    if epoch_reached_target is not None:
-        print(f"Training completed! Target accuracy reached at epoch {epoch_reached_target}")
-    else:
-        print(f"Training completed! Maximum epochs ({args.epochs}) reached")
-        print(f"Final train accuracy: {train_acc:.2f}%")
+    print(f"Training completed! {args.epochs} epochs finished")
+    print("="*70)
 
     # Final MI evaluation with more masks and batches
     print(f"\nFinal MI evaluation (n_masks={args.n_masks_final}, max_batches={args.max_eval_batches_final})...")
     final_mi_full, final_mean_mi_masked, final_mi_diff = evaluate_first_layer_mi(
-        model, eval_loader, device,
+        model, test_loader, device,
         n_subsets=args.n_masks_final,
         seed=args.seed,
         max_batches=args.max_eval_batches_final
@@ -637,14 +587,10 @@ def main():
     print(f"Final MI_diff: {final_mi_diff:.6f}")
 
     # Final accuracy evaluation
-    final_train_acc = evaluate_accuracy(model, eval_loader, device)
     final_test_acc = evaluate_accuracy(model, test_loader, device)
-    final_gen_gap = final_train_acc - final_test_acc
 
     print(f"\nFinal Results:")
-    print(f"  Train Acc: {final_train_acc:.2f}%")
     print(f"  Test Acc:  {final_test_acc:.2f}%")
-    print(f"  Gen Gap:   {final_gen_gap:.2f}%")
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
@@ -660,27 +606,21 @@ def main():
         'seed': args.seed,
         'num_parameters': model.count_parameters(),
         'max_epochs': args.epochs,
-        'target_train_acc': target_train_acc,
-        'epochs_trained': epoch,
-        'epoch_reached_target': epoch_reached_target if epoch_reached_target is not None else -1,
+        'epochs_trained': args.epochs,
         'batch_size': args.batch_size,
         'lr': scaled_lr,
         'weight_decay': args.weight_decay,
         'grad_clip': args.grad_clip,
         'warmup_epochs': args.warmup_epochs,
         'label_smoothing': args.label_smoothing,
-        'use_cutmix': use_cutmix,
-        'final_train_acc': final_train_acc,
+        'train_subset_size': train_subset_size,
         'final_test_acc': final_test_acc,
-        'final_gen_gap': final_gen_gap,
         'final_mi_full': final_mi_full,
         'final_mean_mi_masked': final_mean_mi_masked,
         'final_mi_diff': final_mi_diff,
         'epochs_evaluated': np.array(epochs_evaluated),
         'mi_history': np.array(mi_history),
-        'train_acc_history': np.array(train_acc_history),
         'test_acc_history': np.array(test_acc_history),
-        'gen_gap_history': np.array(gen_gap_history),
     }
 
     np.savez(save_path, **result)
