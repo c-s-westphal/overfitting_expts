@@ -504,16 +504,9 @@ def main():
         test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
 
     elif args.dataset == 'mnist':
-        # MNIST: With augmentation for training, clean for evaluation
+        # MNIST: No augmentation, clean images only
         print("Loading MNIST data...", flush=True)
-        train_transform_aug = transforms.Compose([
-            transforms.RandomRotation(10),
-            transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-            transforms.RandomErasing(p=0.5, scale=(0.02, 0.1)),
-        ])
-        train_transform_clean = transforms.Compose([
+        train_transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,)),
         ])
@@ -522,37 +515,23 @@ def main():
             transforms.Normalize((0.1307,), (0.3081,)),
         ])
 
-        # Load datasets - two versions of training set
-        train_dataset_aug = datasets.MNIST(root='./data', train=True, download=True, transform=train_transform_aug)
-        train_dataset_clean = datasets.MNIST(root='./data', train=True, download=True, transform=train_transform_clean)
+        # Load datasets
+        train_dataset_full = datasets.MNIST(root='./data', train=True, download=True, transform=train_transform)
         test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=test_transform)
         print("MNIST data loaded", flush=True)
 
     print(f"Creating training subset with first {train_subset_size} images...", flush=True)
     # Create subset of first 10,000 training images
-    if args.dataset == 'mnist':
-        train_subset_aug = torch.utils.data.Subset(train_dataset_aug, train_indices)
-        train_subset_clean = torch.utils.data.Subset(train_dataset_clean, train_indices)
-    else:
-        train_subset = torch.utils.data.Subset(train_dataset_full, train_indices)
+    train_subset = torch.utils.data.Subset(train_dataset_full, train_indices)
 
     # Create data loaders
-    if args.dataset == 'mnist':
-        # Train on augmented data
-        train_loader = torch.utils.data.DataLoader(
-            train_subset_aug, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
-        )
-        # Evaluate on clean data (no augmentation)
-        eval_loader = torch.utils.data.DataLoader(
-            train_subset_clean, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
-        )
-    else:
-        train_loader = torch.utils.data.DataLoader(
-            train_subset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
-        )
-        eval_loader = torch.utils.data.DataLoader(
-            train_subset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
-        )
+    train_loader = torch.utils.data.DataLoader(
+        train_subset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
+    )
+    # Eval loader: same as train_loader but no shuffle for consistent evaluation
+    eval_loader = torch.utils.data.DataLoader(
+        train_subset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+    )
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
