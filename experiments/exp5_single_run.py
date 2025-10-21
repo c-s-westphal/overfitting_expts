@@ -504,11 +504,14 @@ def main():
         test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
 
     elif args.dataset == 'mnist':
-        # MNIST: No augmentation, clean images only
+        # MNIST: With augmentation (rotation, affine, random erasing)
         print("Loading MNIST data...", flush=True)
         train_transform = transforms.Compose([
+            transforms.RandomRotation(10),
+            transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,)),
+            transforms.RandomErasing(p=0.5, scale=(0.02, 0.1)),
         ])
         test_transform = transforms.Compose([
             transforms.ToTensor(),
@@ -581,7 +584,7 @@ def main():
     epoch_reached_target = None
 
     # Training loop
-    target_train_acc = 99.99
+    target_train_acc = 99.0
     print(f"\nStarting training (target: {target_train_acc}% train acc, max: {args.epochs} epochs)...")
     print("="*70)
 

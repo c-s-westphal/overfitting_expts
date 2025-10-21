@@ -69,7 +69,7 @@ else
         --device cuda \
         --output_dir results/exp5 \
         --epochs 500 \
-        --hidden_dim 8 \
+        --hidden_dim 32 \
         --dropout 0.0 \
         --lr 1e-3 \
         --weight_decay 0.01 \
