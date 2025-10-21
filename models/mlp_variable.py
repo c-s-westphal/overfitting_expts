@@ -85,6 +85,30 @@ class MLP_Variable(nn.Module):
         """Count total trainable parameters."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
+    def get_first_hidden_layer(self):
+        """Get the module for first hidden layer output (for MI evaluation).
+
+        Returns the ReLU activation after the first hidden layer.
+        This is used to hook and mask neurons in the first hidden layer.
+
+        Raises:
+            ValueError: If n_layers < 1 (no hidden layers exist).
+        """
+        if self.n_layers < 1:
+            raise ValueError(f"Masking requires n_layers >= 1. Got n_layers={self.n_layers}")
+
+        # For MLP_Variable, the network is a Sequential module
+        # First hidden layer structure: Linear(784, h) -> BN (optional) -> ReLU
+        # We want to return the ReLU module after the first hidden layer
+        if self.with_bn:
+            # Structure: Linear -> BN -> ReLU -> [more layers...]
+            # Return the ReLU at index 2 (0=Linear, 1=BN, 2=ReLU)
+            return self.network[2]
+        else:
+            # Structure: Linear -> ReLU -> [more layers...]
+            # Return the ReLU at index 1 (0=Linear, 1=ReLU)
+            return self.network[1]
+
 
 def MLP1_Variable(num_classes=10, n_layers=1, **kwargs):
     """MLP with 1 hidden layer (256 neurons)."""

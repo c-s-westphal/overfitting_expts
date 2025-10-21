@@ -19,6 +19,7 @@ from sklearn.metrics import mutual_info_score
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.mlp_unified import MLP_Unified
+from models.mlp_variable import MLP_Variable
 from data.data_loader import get_cifar10_dataloaders, get_mnist_dataloaders
 
 
@@ -388,6 +389,10 @@ def main():
                         help='Hidden dimension (default: 256)')
     parser.add_argument('--dropout', type=float, default=0.3,
                         help='Dropout probability (default: 0.3)')
+    parser.add_argument('--use_batchnorm', action='store_true',
+                        help='Use MLP_Variable with BatchNorm instead of MLP_Unified with LayerNorm')
+    parser.add_argument('--augment', action='store_true',
+                        help='Enable basic data augmentation for MNIST')
 
     # Training parameters
     parser.add_argument('--epochs', type=int, default=500,
@@ -448,20 +453,32 @@ def main():
         raise ValueError(f"Unknown dataset: {args.dataset}")
 
     # Create model
-    model = MLP_Unified(
-        num_classes=num_classes,
-        n_layers=args.n_layers,
-        hidden_dim=args.hidden_dim,
-        dropout=args.dropout,
-        input_dim=input_dim
-    )
+    if args.use_batchnorm:
+        # Use MLP_Variable with BatchNorm (simpler architecture, no residual connections)
+        model = MLP_Variable(
+            num_classes=num_classes,
+            n_layers=args.n_layers,
+            initial_hidden_dim=args.hidden_dim,
+            with_bn=True
+        )
+        model_type = "MLP_Variable (BatchNorm)"
+    else:
+        # Use MLP_Unified with LayerNorm and residual connections
+        model = MLP_Unified(
+            num_classes=num_classes,
+            n_layers=args.n_layers,
+            hidden_dim=args.hidden_dim,
+            dropout=args.dropout,
+            input_dim=input_dim
+        )
+        model_type = "MLP_Unified (LayerNorm + Residual)"
     model = model.to(device)
 
     print(f"\n{'='*80}")
     print(f"Experiment 5: MLP Variable Depth on {args.dataset.upper()}")
     print(f"{'='*80}")
     print(f"Dataset:          {args.dataset.upper()}")
-    print(f"Architecture:     MLP with LayerNorm and residual connections")
+    print(f"Architecture:     {model_type}")
     print(f"Input Dim:        {input_dim}")
     print(f"Hidden Layers:    {args.n_layers}")
     print(f"Hidden Dim:       {args.hidden_dim}")
@@ -504,12 +521,24 @@ def main():
         test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
 
     elif args.dataset == 'mnist':
-        # MNIST: No augmentation, clean images only
+        # MNIST: Optional basic augmentation
         print("Loading MNIST data...", flush=True)
-        train_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-        ])
+        if args.augment:
+            # Basic augmentation: small rotations and translations
+            train_transform = transforms.Compose([
+                transforms.RandomRotation(10),
+                transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,)),
+            ])
+            print("Using MNIST augmentation: rotation (±10°), translation (±10%)", flush=True)
+        else:
+            train_transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,)),
+            ])
+            print("No augmentation", flush=True)
+
         test_transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,)),
