@@ -75,7 +75,7 @@ else
         --weight_decay 0.01 \
         --grad_clip 1.0 \
         --warmup_epochs 5 \
-        --label_smoothing 0.1 \
+        --label_smoothing 0.0 \
         --eval_interval 10 \
         --n_masks_train 20 \
         --n_masks_final 40 \
