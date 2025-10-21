@@ -3,7 +3,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --job-name=exp5_mlp_mnist
-#SBATCH --array=1-45
+#SBATCH --array=1-30
 #SBATCH --output=logs/exp5_mlp_mnist_%A_%a.out
 #SBATCH --error=logs/exp5_mlp_mnist_%A_%a.err
 set -euo pipefail
@@ -69,7 +69,7 @@ else
         --device cuda \
         --output_dir results/exp5 \
         --epochs 500 \
-        --hidden_dim 16 \
+        --hidden_dim 8 \
         --dropout 0.0 \
         --lr 1e-3 \
         --weight_decay 0.0 \
