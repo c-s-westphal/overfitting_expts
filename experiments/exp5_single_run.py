@@ -524,14 +524,13 @@ def main():
         # MNIST: Optional basic augmentation
         print("Loading MNIST data...", flush=True)
         if args.augment:
-            # Basic augmentation: small rotations and translations
+            # Basic augmentation: small rotations only
             train_transform = transforms.Compose([
                 transforms.RandomRotation(10),
-                transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
                 transforms.ToTensor(),
                 transforms.Normalize((0.1307,), (0.3081,)),
             ])
-            print("Using MNIST augmentation: rotation (±10°), translation (±10%)", flush=True)
+            print("Using MNIST augmentation: rotation (±10°)", flush=True)
         else:
             train_transform = transforms.Compose([
                 transforms.ToTensor(),
