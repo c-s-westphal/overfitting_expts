@@ -1,30 +1,30 @@
-2 0 mnist 32
-3 0 mnist 31
-4 0 mnist 30
-5 0 mnist 29
-6 0 mnist 28
-7 0 mnist 27
-2 1 mnist 32
-3 1 mnist 31
-4 1 mnist 30
-5 1 mnist 29
-6 1 mnist 28
-7 1 mnist 27
-2 2 mnist 32
-3 2 mnist 31
-4 2 mnist 30
-5 2 mnist 29
-6 2 mnist 28
-7 2 mnist 27
-2 3 mnist 32
-3 3 mnist 31
-4 3 mnist 30
-5 3 mnist 29
-6 3 mnist 28
-7 3 mnist 27
-2 4 mnist 32
-3 4 mnist 31
-4 4 mnist 30
-5 4 mnist 29
-6 4 mnist 28
-7 4 mnist 27
+2 0 mnist
+3 0 mnist
+4 0 mnist
+5 0 mnist
+6 0 mnist
+7 0 mnist
+2 1 mnist
+3 1 mnist
+4 1 mnist
+5 1 mnist
+6 1 mnist
+7 1 mnist
+2 2 mnist
+3 2 mnist
+4 2 mnist
+5 2 mnist
+6 2 mnist
+7 2 mnist
+2 3 mnist
+3 3 mnist
+4 3 mnist
+5 3 mnist
+6 3 mnist
+7 3 mnist
+2 4 mnist
+3 4 mnist
+4 4 mnist
+5 4 mnist
+6 4 mnist
+7 4 mnist

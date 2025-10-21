@@ -37,19 +37,18 @@ mkdir -p data
 # 4.  Extract task-specific parameters
 # ---------------------------------------------------------------------
 # Format per line in jobs_exp5_mnist.txt:
-#   <n_layers> <seed> <dataset> <hidden_dim>
+#   <n_layers> <seed> <dataset>
 n_layers=$(sed -n ${number}p "$paramfile" | awk '{print $1}')
 seed=$(sed -n ${number}p "$paramfile" | awk '{print $2}')
 dataset=$(sed -n ${number}p "$paramfile" | awk '{print $3}')
-hidden_dim=$(sed -n ${number}p "$paramfile" | awk '{print $4}')
 
-if [[ -z "$n_layers" || -z "$seed" || -z "$dataset" || -z "$hidden_dim" ]]; then
+if [[ -z "$n_layers" || -z "$seed" || -z "$dataset" ]]; then
   echo "Invalid job line at index $number in $paramfile" >&2
   exit 1
 fi
 
 date
-echo "Running exp5 MLP Variable MNIST: n_layers=$n_layers, seed=$seed, dataset=$dataset, hidden_dim=$hidden_dim"
+echo "Running exp5 MLP Variable MNIST: n_layers=$n_layers, seed=$seed, dataset=$dataset, hidden_dim=8 (fixed)"
 
 # Define expected results path for conditional training
 results_file="results/exp5/mlp_${dataset}_layers${n_layers}_seed${seed}_results.npz"
@@ -70,7 +69,7 @@ else
         --device cuda \
         --output_dir results/exp5 \
         --epochs 500 \
-        --hidden_dim "$hidden_dim" \
+        --hidden_dim 8 \
         --use_batchnorm \
         --dropout 0.0 \
         --lr 1e-3 \
@@ -83,11 +82,10 @@ else
         --n_masks_final 40 \
         --max_eval_batches_train 20 \
         --max_eval_batches_final 40 \
-        --num_workers 0 \
-        --augment
+        --num_workers 0
 
     date
-    echo "Training completed: MLP n_layers=$n_layers seed=$seed dataset=$dataset hidden_dim=$hidden_dim"
+    echo "Training completed: MLP n_layers=$n_layers seed=$seed dataset=$dataset hidden_dim=8"
 fi
 
 date
