@@ -62,7 +62,18 @@ date
 echo "Running exp6 Full-Depth VGG (5 epochs): arch=$arch, seed=$seed"
 
 # ---------------------------------------------------------------------
-# 5.  Run single experiment with 5 epochs
+# 5.  Check GPU availability before running
+# ---------------------------------------------------------------------
+echo "Checking GPU availability..."
+if command -v nvidia-smi &> /dev/null; then
+  nvidia-smi
+  echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
+else
+  echo "nvidia-smi not available"
+fi
+
+# ---------------------------------------------------------------------
+# 6.  Run single experiment with 5 epochs
 # ---------------------------------------------------------------------
 echo "Starting training for 5 epochs..."
 python3.9 -u experiments/exp6_single_run.py \

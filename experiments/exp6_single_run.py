@@ -253,10 +253,26 @@ def main():
 
     args = parser.parse_args()
 
+    # Check device availability and handle CUDA errors
+    if args.device == 'cuda':
+        if not torch.cuda.is_available():
+            print(f"WARNING: CUDA requested but not available. Falling back to CPU.")
+            args.device = 'cpu'
+        else:
+            try:
+                # Test CUDA initialization
+                torch.cuda.current_device()
+                print(f"CUDA is available. Using GPU: {torch.cuda.get_device_name(0)}")
+                print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
+            except RuntimeError as e:
+                print(f"WARNING: CUDA initialization failed with error: {e}")
+                print(f"Falling back to CPU.")
+                args.device = 'cpu'
+
     # Set random seeds
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    if torch.cuda.is_available():
+    if args.device == 'cuda' and torch.cuda.is_available():
         torch.cuda.manual_seed(args.seed)
 
     # Build model - use full depth for each architecture
