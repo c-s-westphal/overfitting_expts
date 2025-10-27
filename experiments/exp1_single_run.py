@@ -5,20 +5,19 @@ import sys
 import argparse
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.resnet_cifar import ResNet20, ResNet32, ResNet56
-from models.vgg_cifar import VGG11, VGG16, VGG19
+from models.vgg_variable_family import VGG9_Variable, VGG11_Variable, VGG13_Variable, VGG16_Variable, VGG19_Variable
 from data.data_loader import get_cifar10_dataloaders
 from utils.training import train_model
 
 
 def get_model_fn(model_name):
+    """Get model function and full depth for VGG architectures."""
     models = {
-        'resnet20': ResNet20,
-        'resnet32': ResNet32,
-        'resnet56': ResNet56,
-        'vgg11': VGG11,
-        'vgg16': VGG16,
-        'vgg19': VGG19
+        'vgg9': (VGG9_Variable, 6),
+        'vgg11': (VGG11_Variable, 8),
+        'vgg13': (VGG13_Variable, 10),
+        'vgg16': (VGG16_Variable, 13),
+        'vgg19': (VGG19_Variable, 16)
     }
     return models[model_name]
 
@@ -44,9 +43,9 @@ def main():
         torch.cuda.manual_seed(args.seed)
     
     print(f"Running: {args.model}, size={args.dataset_size}, seed={args.seed}")
-    
-    model_fn = get_model_fn(args.model)
-    model = model_fn()
+
+    model_fn, full_depth = get_model_fn(args.model)
+    model = model_fn(num_classes=10, n_layers=full_depth, with_bn=True, dropout_p=0.0)
     
     trainloader, testloader = get_cifar10_dataloaders(
         batch_size=args.batch_size,

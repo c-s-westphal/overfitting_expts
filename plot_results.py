@@ -6,8 +6,8 @@ from utils.results_utils import load_experiment_results, aggregate_results, load
 
 
 def plot_experiment_1():
-    models = ['ResNet20', 'ResNet32', 'ResNet56', 'VGG11', 'VGG16', 'VGG19']
-    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown']
+    models = ['VGG9', 'VGG11', 'VGG13', 'VGG16', 'VGG19']
+    colors = ['red', 'blue', 'green', 'orange', 'purple']
     
     plt.figure(figsize=(12, 8))
     
@@ -56,8 +56,8 @@ def plot_experiment_1():
 
 
 def plot_experiment_2():
-    models = ['ResNet20', 'ResNet32', 'ResNet56', 'VGG11', 'VGG16', 'VGG19']
-    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown']
+    models = ['VGG9', 'VGG11', 'VGG13', 'VGG16', 'VGG19']
+    colors = ['red', 'blue', 'green', 'orange', 'purple']
     
     plt.figure(figsize=(12, 8))
     
