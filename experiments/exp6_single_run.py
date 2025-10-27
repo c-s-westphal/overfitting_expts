@@ -1,9 +1,10 @@
 """
-Experiment 6: Full-depth VGG models with epoch 1 occlusion sensitivity.
+Experiment 6: Full-depth VGG models with occlusion sensitivity tracking.
 
-Studies occlusion sensitivity at epoch 1 across different VGG architecture sizes
+Studies occlusion sensitivity across training epochs for different VGG architecture sizes
 (VGG9, VGG11, VGG13, VGG16, VGG19) using full depth for each architecture.
 Special pixel at center (16, 16) with 0.0 noise.
+Can train for 1 or multiple epochs (use --epochs flag).
 """
 import torch
 import torch.nn as nn
@@ -152,9 +153,9 @@ def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples
     }
 
 
-def train_model_one_epoch(model, trainloader, testloader, device='cuda', lr=0.001, weight_decay=5e-4):
+def train_model_multi_epoch(model, trainloader, testloader, device='cuda', lr=0.001, weight_decay=5e-4, epochs=1):
     """
-    Train model for exactly 1 epoch and compute occlusion sensitivity.
+    Train model for multiple epochs and compute occlusion sensitivity at each epoch.
 
     Args:
         model: The VGG model to train
@@ -163,39 +164,67 @@ def train_model_one_epoch(model, trainloader, testloader, device='cuda', lr=0.00
         device: Device to train on (cuda or cpu)
         lr: Learning rate for AdamW
         weight_decay: Weight decay
+        epochs: Number of epochs to train (default: 1)
 
     Returns:
-        dict: Training metrics including occlusion at epoch 1
+        dict: Training metrics including occlusion at each epoch
     """
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-    print(f"\nTraining for 1 epoch...")
+    print(f"\nTraining for {epochs} epoch(s)...")
 
-    # Train for 1 epoch
-    train_loss, train_acc = train_epoch(model, trainloader, criterion, optimizer, device)
-    test_loss, test_acc = evaluate(model, testloader, criterion, device)
+    # Store metrics for all epochs
+    train_losses = []
+    train_accs = []
+    test_losses = []
+    test_accs = []
+    generalization_gaps = []
+    occlusion_data = {}
 
-    print(f"\nEpoch 1 | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
+    # Train for specified number of epochs
+    for epoch in range(1, epochs + 1):
+        train_loss, train_acc = train_epoch(model, trainloader, criterion, optimizer, device)
+        test_loss, test_acc = evaluate(model, testloader, criterion, device)
+        gap = train_acc - test_acc
 
-    # Compute occlusion sensitivity at epoch 1
-    print(f"\n{'='*80}")
-    print(f"Computing occlusion sensitivity at epoch 1...")
-    print(f"{'='*80}")
-    occlusion_epoch1 = compute_occlusion_sensitivity(model, trainloader, criterion, device)
-    gap_epoch1 = train_acc - test_acc
-    print(f"Epoch 1 - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap_epoch1:.2f}%")
-    print(f"{'='*80}\n")
+        train_losses.append(train_loss)
+        train_accs.append(train_acc)
+        test_losses.append(test_loss)
+        test_accs.append(test_acc)
+        generalization_gaps.append(gap)
 
-    return {
-        'train_loss': train_loss,
-        'train_acc': train_acc,
-        'test_loss': test_loss,
-        'test_acc': test_acc,
-        'generalization_gap': gap_epoch1,
-        'occlusion_epoch1': occlusion_epoch1,
+        print(f"\nEpoch {epoch} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
+
+        # Compute occlusion sensitivity at this epoch
+        print(f"\n{'='*80}")
+        print(f"Computing occlusion sensitivity at epoch {epoch}...")
+        print(f"{'='*80}")
+        occlusion = compute_occlusion_sensitivity(model, trainloader, criterion, device)
+        occlusion_data[f'occlusion_epoch{epoch}'] = occlusion
+        print(f"Epoch {epoch} - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap:.2f}%")
+        print(f"{'='*80}\n")
+
+    # Return comprehensive results
+    result = {
+        'train_losses': train_losses,
+        'train_accs': train_accs,
+        'test_losses': test_losses,
+        'test_accs': test_accs,
+        'generalization_gaps': generalization_gaps,
+        'final_train_loss': train_losses[-1],
+        'final_train_acc': train_accs[-1],
+        'final_test_loss': test_losses[-1],
+        'final_test_acc': test_accs[-1],
+        'final_generalization_gap': generalization_gaps[-1],
+        'epochs': epochs,
     }
+
+    # Add all occlusion data
+    result.update(occlusion_data)
+
+    return result
 
 
 def main():
@@ -219,6 +248,8 @@ def main():
                         help='Weight decay')
     parser.add_argument('--no_augment', action='store_true',
                         help='Disable train-time augmentation')
+    parser.add_argument('--epochs', type=int, default=1,
+                        help='Number of epochs to train (default: 1)')
 
     args = parser.parse_args()
 
@@ -245,13 +276,14 @@ def main():
     pixel_location = (16, 16)
 
     print(f"\n{'='*80}")
-    print(f"Experiment 6: {model_name} Full Depth - Epoch 1 Occlusion")
+    print(f"Experiment 6: {model_name} Full Depth - Occlusion ({args.epochs} epoch(s))")
     print(f"{'='*80}")
     print(f"Architecture:     {model_name}")
     print(f"Num Layers:       {full_depth} (full depth)")
     print(f"Special Pixel:    {pixel_location} (center)")
     print(f"Noise Level:      {noise_level:.4f} (always correct)")
     print(f"Seed:             {args.seed}")
+    print(f"Epochs:           {args.epochs}")
     print(f"Batch Size:       {args.batch_size}")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
@@ -266,10 +298,10 @@ def main():
         augment=(not args.no_augment)
     )
 
-    # Train model for 1 epoch
-    metrics = train_model_one_epoch(
+    # Train model for specified epochs
+    metrics = train_model_multi_epoch(
         model, trainloader, testloader, device=args.device,
-        lr=args.lr, weight_decay=args.weight_decay
+        lr=args.lr, weight_decay=args.weight_decay, epochs=args.epochs
     )
 
     # Prepare results
@@ -279,34 +311,42 @@ def main():
         'noise_level': noise_level,
         'pixel_location': pixel_location,
         'seed': args.seed,
-        'train_acc': metrics['train_acc'],
-        'test_acc': metrics['test_acc'],
-        'generalization_gap': metrics['generalization_gap'],
-        'train_loss': metrics['train_loss'],
-        'test_loss': metrics['test_loss'],
+        'epochs': args.epochs,
+        'train_accs': metrics['train_accs'],
+        'test_accs': metrics['test_accs'],
+        'generalization_gaps': metrics['generalization_gaps'],
+        'train_losses': metrics['train_losses'],
+        'test_losses': metrics['test_losses'],
+        'final_train_acc': metrics['final_train_acc'],
+        'final_test_acc': metrics['final_test_acc'],
+        'final_generalization_gap': metrics['final_generalization_gap'],
     }
 
-    # Add occlusion data
-    result.update({
-        'occlusion_maps_epoch1': metrics['occlusion_epoch1']['occlusion_maps'],
-        'sample_images_epoch1': metrics['occlusion_epoch1']['sample_images'],
-        'sample_labels_epoch1': metrics['occlusion_epoch1']['sample_labels'],
-    })
+    # Add all occlusion data for each epoch
+    for epoch in range(1, args.epochs + 1):
+        occlusion_key = f'occlusion_epoch{epoch}'
+        if occlusion_key in metrics:
+            result[f'occlusion_maps_epoch{epoch}'] = metrics[occlusion_key]['occlusion_maps']
+            result[f'sample_images_epoch{epoch}'] = metrics[occlusion_key]['sample_images']
+            result[f'sample_labels_epoch{epoch}'] = metrics[occlusion_key]['sample_labels']
 
     print(f"\n{'='*80}")
     print(f"Training Complete")
     print(f"{'='*80}")
-    print(f"Train Accuracy:   {metrics['train_acc']:.2f}%")
-    print(f"Test Accuracy:    {metrics['test_acc']:.2f}%")
-    print(f"Gen. Gap:         {metrics['generalization_gap']:.2f}%")
+    print(f"Final Train Accuracy:   {metrics['final_train_acc']:.2f}%")
+    print(f"Final Test Accuracy:    {metrics['final_test_acc']:.2f}%")
+    print(f"Final Gen. Gap:         {metrics['final_generalization_gap']:.2f}%")
     print(f"{'='*80}\n")
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Naming convention: vgg{X}_seed{seed}_results.npz
+    # Naming convention: vgg{X}_seed{seed}_results.npz or vgg{X}_seed{seed}_{N}epochs_results.npz
     arch_num = model_name.lower()
-    save_path = f"{args.output_dir}/{arch_num}_seed{args.seed}_results.npz"
+    if args.epochs == 1:
+        save_path = f"{args.output_dir}/{arch_num}_seed{args.seed}_results.npz"
+    else:
+        save_path = f"{args.output_dir}/{arch_num}_seed{args.seed}_{args.epochs}epochs_results.npz"
 
     np.savez(save_path, **result)
     print(f"Results saved to: {save_path}\n")
