@@ -13,6 +13,7 @@ import torch.nn as nn
 # With 3 maxpools positioned to ensure even 4-layer models end at 4x4 spatial features
 # Third maxpool is placed after layer 4 to guarantee all n_layers >= 4 get 4x4 features
 VGG_CONFIGS = {
+    'VGG9': [64, 'M', 128, 'M', 256, 256, 'M', 512, 'M', 512, 'M'],
     'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 512, 512],
     'VGG13': [64, 64, 'M', 128, 'M', 128, 'M', 256, 256, 512, 512, 512, 512],
     'VGG16': [64, 64, 'M', 128, 'M', 128, 'M', 256, 256, 256, 512, 512, 512, 512, 512, 512],
@@ -20,6 +21,7 @@ VGG_CONFIGS = {
 }
 
 VGG_MAX_LAYERS = {
+    'VGG9': 6,
     'VGG11': 8,
     'VGG13': 10,
     'VGG16': 13,
@@ -161,6 +163,19 @@ class _VGGVariableBase(nn.Module):
 
 
 # Factory functions for each VGG variant
+def VGG9_Variable(num_classes=10, n_layers=6, with_bn=True, dropout_p=0.0):
+    """VGG9 Variable: 4-6 convolutional layers with unified classifier."""
+    return _VGGVariableBase(
+        num_classes=num_classes,
+        n_layers=n_layers,
+        full_cfg=VGG_CONFIGS['VGG9'],
+        arch_name='VGG9',
+        max_layers=VGG_MAX_LAYERS['VGG9'],
+        with_bn=with_bn,
+        dropout_p=dropout_p
+    )
+
+
 def VGG11_Variable(num_classes=10, n_layers=8, with_bn=True, dropout_p=0.0):
     """VGG11 Variable: 4-8 convolutional layers with unified classifier."""
     return _VGGVariableBase(
