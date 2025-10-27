@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N noise_pixel_exp
-#$ -t 1-180
+#$ -t 1-150
 set -euo pipefail
 
 hostname

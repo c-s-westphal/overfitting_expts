@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N varying_samples_exp
-#$ -t 1-198
+#$ -t 1-165
 set -euo pipefail
 
 hostname
