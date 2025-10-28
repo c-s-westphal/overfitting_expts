@@ -26,7 +26,7 @@ def plot_experiment_1():
         'VGG19': '#3C5488'   # Blue
     }
 
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(7, 4.5))
 
     for model in models:
         try:
@@ -83,7 +83,7 @@ def plot_experiment_1():
     ax.tick_params(axis='both', which='major', labelsize=14)
 
     # Legend with updated styling
-    ax.legend(fontsize=13, loc='best', frameon=True, fancybox=False,
+    ax.legend(fontsize=12, loc='best', frameon=True, fancybox=False,
               edgecolor='black', framealpha=1)
 
     # Remove grid lines
@@ -120,7 +120,7 @@ def plot_experiment_2():
         'VGG19': '#3C5488'   # Blue
     }
 
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(7, 4.5))
 
     for model in models:
         try:
@@ -170,13 +170,13 @@ def plot_experiment_2():
     # Publication-quality styling
     ax.set_xlabel('Mutual Information (bits)', fontsize=16, fontweight='normal')
     ax.set_ylabel('Generalization Gap (%)', fontsize=16, fontweight='normal')
-    ax.set_title('Generalization Gap vs Mutual Information of Special Pixel', fontsize=16, fontweight='bold', pad=10)
+    ax.set_title('Generalization Gap vs MI of Subsets (LB)', fontsize=16, fontweight='bold', pad=10)
 
     # Increase tick label size
     ax.tick_params(axis='both', which='major', labelsize=14)
 
     # Legend with updated styling
-    ax.legend(fontsize=13, loc='best', frameon=True, fancybox=False,
+    ax.legend(fontsize=12, loc='best', frameon=True, fancybox=False,
               edgecolor='black', framealpha=1)
 
     # Remove grid lines
@@ -1256,6 +1256,175 @@ def main():
     plot_experiment_5()
     plot_experiment_6_occlusion()
     print("All plots generated successfully!")
+
+
+def plot_combined_mlp_vgg_occlusion():
+    """
+    Create a combined 2-row figure showing occlusion sensitivity:
+    - Row 1: MLPs (5, 10, 15, 20, 25 layers) at Epoch 1
+    - Row 2: VGGs (VGG9, VGG11, VGG13, VGG16, VGG19) at Epoch 1
+    Publication-quality styling with Times New Roman font.
+    """
+    import matplotlib.gridspec as gridspec
+    import glob
+
+    # Configuration
+    mlp_depths = [5, 10, 15, 20, 25]
+    vgg_archs = ['vgg9', 'vgg11', 'vgg13', 'vgg16', 'vgg19']
+    vgg_labels = ['VGG9', 'VGG11', 'VGG13', 'VGG16', 'VGG19']
+
+    # Create figure with 2 rows × 5 columns
+    fig = plt.figure(figsize=(16, 6.5))
+    gs = gridspec.GridSpec(2, 5, figure=fig, hspace=0.15, wspace=0.01,
+                          left=0.05, right=0.92, top=0.95, bottom=0.08)
+
+    im = None  # Will store the last imshow object for colorbar
+
+    # ==================== ROW 1: MLPs ====================
+    for col_idx, depth in enumerate(mlp_depths):
+        # Load all seeds and average occlusion maps
+        all_files = glob.glob(os.path.join('results/exp4', f"mlp_layers{depth}_seed*_results.npz"))
+        matching_files = [f for f in all_files if 'nopixel' not in f]
+
+        if not matching_files:
+            print(f"No results found for MLP {depth} layers")
+            continue
+
+        # Collect occlusion maps across all seeds and classes
+        epoch1_maps_all_classes = []
+        sample_image = None
+
+        for result_file in matching_files:
+            data = np.load(result_file, allow_pickle=True)
+
+            if 'occlusion_maps_epoch1' not in data:
+                continue
+
+            occlusion_epoch1 = data['occlusion_maps_epoch1']  # Shape: (10, 28, 28)
+
+            # Average across all 10 classes for this seed
+            epoch1_maps_all_classes.append(np.mean(occlusion_epoch1, axis=0))
+
+            # Use seed 0's first sample image for display
+            if sample_image is None and 'seed0' in result_file:
+                sample_image = data['sample_images_epoch1'][0]
+
+        if not epoch1_maps_all_classes:
+            print(f"No occlusion data found for MLP {depth} layers")
+            continue
+
+        # Use first available sample image if seed0 not found
+        if sample_image is None:
+            data = np.load(matching_files[0], allow_pickle=True)
+            sample_image = data['sample_images_epoch1'][0]
+
+        # Average occlusion maps across all seeds
+        occ_map_epoch1 = np.mean(epoch1_maps_all_classes, axis=0)
+
+        # Apply power transform and normalize
+        power = 0.5  # Square root transform
+        occ_epoch1_shifted = occ_map_epoch1 - occ_map_epoch1.min()
+        occ_epoch1_transformed = occ_epoch1_shifted ** power
+        occ_epoch1_norm = (occ_epoch1_transformed - occ_epoch1_transformed.min()) / \
+                          (occ_epoch1_transformed.max() - occ_epoch1_transformed.min() + 1e-10)
+
+        # Plot MLP occlusion (row 0)
+        ax = fig.add_subplot(gs[0, col_idx])
+        ax.imshow(sample_image, cmap='gray', alpha=0.7)
+        im = ax.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
+
+        # Title with row label only on leftmost column
+        if col_idx == 0:
+            ax.set_title(f'MLP: {depth} layers', fontsize=16, fontweight='bold', pad=10)
+        else:
+            ax.set_title(f'{depth} layers', fontsize=16, fontweight='bold', pad=10)
+
+        ax.axis('off')
+
+    # ==================== ROW 2: VGGs ====================
+    for col_idx, (arch_name, display_name) in enumerate(zip(vgg_archs, vgg_labels)):
+        # Load all seeds and average occlusion maps
+        all_files = glob.glob(os.path.join('results/exp6', f"{arch_name}_seed*_results.npz"))
+
+        if not all_files:
+            print(f"No results found for {arch_name}")
+            continue
+
+        # Collect occlusion maps across all seeds and classes
+        epoch1_maps_all_classes = []
+        sample_image = None
+
+        for result_file in all_files:
+            data = np.load(result_file, allow_pickle=True)
+
+            if 'occlusion_maps_epoch1' not in data:
+                continue
+
+            occlusion_epoch1 = data['occlusion_maps_epoch1']  # Shape: (10, 32, 32)
+
+            # Average across all 10 classes for this seed
+            epoch1_maps_all_classes.append(np.mean(occlusion_epoch1, axis=0))
+
+            # Use seed 0's first sample image for display
+            if sample_image is None and 'seed0' in result_file:
+                sample_image = data['sample_images_epoch1'][0]
+
+        if not epoch1_maps_all_classes:
+            print(f"No occlusion data found for {arch_name}")
+            continue
+
+        # Use first available sample image if seed0 not found
+        if sample_image is None:
+            data = np.load(all_files[0], allow_pickle=True)
+            if 'sample_images_epoch1' in data:
+                sample_image = data['sample_images_epoch1'][0]
+
+        # Average occlusion maps across all seeds
+        occ_map_epoch1 = np.mean(epoch1_maps_all_classes, axis=0)
+
+        # Apply power transform and normalize
+        power = 0.5
+        occ_epoch1_shifted = occ_map_epoch1 - occ_map_epoch1.min()
+        occ_epoch1_transformed = occ_epoch1_shifted ** power
+        occ_epoch1_norm = (occ_epoch1_transformed - occ_epoch1_transformed.min()) / \
+                          (occ_epoch1_transformed.max() - occ_epoch1_transformed.min() + 1e-10)
+
+        if sample_image is not None:
+            # Convert RGB image from (3, 32, 32) to (32, 32, 3) for display
+            sample_image_display = np.transpose(sample_image, (1, 2, 0))
+            # Normalize to [0, 1] for display
+            sample_image_display = (sample_image_display - sample_image_display.min()) / \
+                                   (sample_image_display.max() - sample_image_display.min() + 1e-10)
+
+        # Plot VGG occlusion (row 1)
+        ax = fig.add_subplot(gs[1, col_idx])
+        if sample_image is not None:
+            ax.imshow(sample_image_display)
+        im = ax.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
+
+        # Title with row label only on leftmost column
+        if col_idx == 0:
+            ax.set_title(f'CNN: {display_name}', fontsize=16, fontweight='bold', pad=10)
+        else:
+            ax.set_title(display_name, fontsize=16, fontweight='bold', pad=10)
+
+        ax.axis('off')
+
+    # Add colorbar
+    if im is not None:
+        cbar_ax = fig.add_axes([0.93, 0.15, 0.015, 0.7])
+        cbar = fig.colorbar(im, cax=cbar_ax)
+        cbar.set_label('Occlusion Sensitivity', rotation=270, labelpad=25,
+                      fontsize=16, fontweight='normal')
+        cbar.ax.tick_params(labelsize=14)
+
+    # Save figure
+    os.makedirs('plots', exist_ok=True)
+    plt.savefig('plots/combined_mlp_vgg_occlusion.png', dpi=600, bbox_inches='tight',
+                facecolor='white', edgecolor='none')
+    plt.close()
+
+    print("Combined MLP-VGG occlusion plot saved to plots/combined_mlp_vgg_occlusion.png")
 
 
 if __name__ == "__main__":

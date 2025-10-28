@@ -393,6 +393,8 @@ def main():
                         help='Use MLP_Variable with BatchNorm instead of MLP_Unified with LayerNorm')
     parser.add_argument('--augment', action='store_true',
                         help='Enable basic data augmentation for MNIST')
+    parser.add_argument('--use_full_dataset', action='store_true',
+                        help='Use full training dataset instead of first 10,000 images')
 
     # Training parameters
     parser.add_argument('--epochs', type=int, default=500,
@@ -485,7 +487,8 @@ def main():
     print(f"Dropout:          {args.dropout}")
     print(f"Total Params:     {model.count_parameters():,}")
     print(f"Seed:             {args.seed}")
-    print(f"Train Subset:     First 10,000 training images (no augmentation)")
+    train_size_desc = "Full training dataset" if args.use_full_dataset else "First 10,000 training images"
+    print(f"Train Data:       {train_size_desc}")
     print(f"Target Train Acc: 99.99%")
     print(f"Batch Size:       {args.batch_size}")
     print(f"Learning Rate:    {scaled_lr:.6f} (scaled from {args.lr} for batch {args.batch_size})")
@@ -501,9 +504,13 @@ def main():
     print("\nCreating data loaders...", flush=True)
     from torchvision import datasets, transforms
 
-    # Training subset size: first 10,000 images
-    train_subset_size = 10000
-    train_indices = list(range(train_subset_size))
+    # Training subset size: first 10,000 images or full dataset
+    if args.use_full_dataset:
+        train_subset_size = None  # Will be set after loading dataset
+        train_indices = None
+    else:
+        train_subset_size = 10000
+        train_indices = list(range(train_subset_size))
 
     if args.dataset == 'cifar10':
         # CIFAR-10: No augmentation, clean images only
@@ -548,17 +555,22 @@ def main():
         test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=test_transform)
         print("MNIST data loaded", flush=True)
 
-    print(f"Creating training subset with first {train_subset_size} images...", flush=True)
-    # Create subset of first 10,000 training images
-    train_subset = torch.utils.data.Subset(train_dataset_full, train_indices)
+    # Create training dataset (subset or full)
+    if args.use_full_dataset:
+        train_subset_size = len(train_dataset_full)
+        print(f"Using full training dataset with {train_subset_size} images...", flush=True)
+        train_dataset = train_dataset_full
+    else:
+        print(f"Creating training subset with first {train_subset_size} images...", flush=True)
+        train_dataset = torch.utils.data.Subset(train_dataset_full, train_indices)
 
     # Create data loaders
     train_loader = torch.utils.data.DataLoader(
-        train_subset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
+        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
     )
     # Eval loader: same as train_loader but no shuffle for consistent evaluation
     eval_loader = torch.utils.data.DataLoader(
-        train_subset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+        train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
@@ -609,7 +621,7 @@ def main():
     epoch_reached_target = None
 
     # Training loop
-    target_train_acc = 99.0
+    target_train_acc = 99.99
     print(f"\nStarting training (target: {target_train_acc}% train acc, max: {args.epochs} epochs)...")
     print("="*70)
 
