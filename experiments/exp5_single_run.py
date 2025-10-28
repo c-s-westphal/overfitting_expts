@@ -653,7 +653,8 @@ def main():
             print(f"Epoch {epoch}/{args.epochs}: Train Acc: {train_acc:.2f}%, Test Acc: {test_acc:.2f}%", flush=True)
 
             # Evaluate MI (skip at final epoch since we do comprehensive MI eval after loop)
-            if epoch != args.epochs:
+            # Also skip for n_layers=1 since masking requires at least 2 layers
+            if epoch != args.epochs and args.n_layers >= 2:
                 print(f"  Evaluating MI on train subset (n_masks={args.n_masks_train}, max_batches={args.max_eval_batches_train})...", flush=True)
                 mi_full, mean_mi_masked, mi_diff = evaluate_first_layer_mi(
                     model, eval_loader, device,
@@ -668,6 +669,8 @@ def main():
                 train_acc_history.append(train_acc)
                 test_acc_history.append(test_acc)
                 epochs_evaluated.append(epoch)
+            elif args.n_layers == 1:
+                print(f"  Skipping MI evaluation (n_layers=1, masking not applicable)", flush=True)
 
         # Early stopping if target accuracy reached
         if train_acc >= target_train_acc:
@@ -685,18 +688,25 @@ def main():
     print("="*70)
 
     # Final MI evaluation with all possible subsets and all batches (on train subset)
-    print(f"\nFinal MI evaluation on train subset (all subsets, all batches)...", flush=True)
-    final_mi_full, final_mean_mi_masked, final_mi_diff = evaluate_first_layer_mi(
-        model, eval_loader, device,
-        n_subsets=args.n_masks_final,  # Ignored when use_all_subsets=True
-        seed=args.seed,
-        max_batches=0,  # Use all batches for final evaluation
-        use_all_subsets=True  # Use all possible subsets for final evaluation
-    )
+    # Skip for n_layers=1 since masking requires at least 2 layers
+    if args.n_layers >= 2:
+        print(f"\nFinal MI evaluation on train subset (all subsets, all batches)...", flush=True)
+        final_mi_full, final_mean_mi_masked, final_mi_diff = evaluate_first_layer_mi(
+            model, eval_loader, device,
+            n_subsets=args.n_masks_final,  # Ignored when use_all_subsets=True
+            seed=args.seed,
+            max_batches=0,  # Use all batches for final evaluation
+            use_all_subsets=True  # Use all possible subsets for final evaluation
+        )
 
-    print(f"Final MI: {final_mi_full:.6f}", flush=True)
-    print(f"Final MI_masked: {final_mean_mi_masked:.6f}", flush=True)
-    print(f"Final MI_diff: {final_mi_diff:.6f}", flush=True)
+        print(f"Final MI: {final_mi_full:.6f}", flush=True)
+        print(f"Final MI_masked: {final_mean_mi_masked:.6f}", flush=True)
+        print(f"Final MI_diff: {final_mi_diff:.6f}", flush=True)
+    else:
+        print(f"\nSkipping final MI evaluation (n_layers=1, masking not applicable)", flush=True)
+        final_mi_full = np.nan
+        final_mean_mi_masked = np.nan
+        final_mi_diff = np.nan
 
     # Final accuracy evaluation
     final_train_acc = evaluate_accuracy(model, eval_loader, device)
