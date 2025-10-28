@@ -743,46 +743,117 @@ def plot_experiment_4():
 
 
 def plot_experiment_5():
-    """Plot Experiment 5: All-Conv Variable - Generalization Gap vs Number of Layers."""
-    plt.figure(figsize=(12, 8))
+    """Plot Experiment 5: MNIST MLP - Layer 1 Subset Synergy vs Generalization Gap."""
+    import glob
 
-    try:
-        # Load per-seed results and aggregate
-        results = load_exp5_results_from_per_seed(results_dir='results/exp5')
-        aggregated = aggregate_results(results)
+    # Publication-quality color scheme for layers
+    colors = {
+        1: '#F39B7F',   # Peach
+        2: '#E64B35',   # Red-orange
+        3: '#4DBBD5',   # Cyan
+        4: '#00A087',   # Teal
+        5: '#3C5488'    # Blue
+    }
 
-        layers = results['n_layers']
-        gaps_mean = aggregated['generalization_gaps_mean']
-        gaps_std = aggregated['generalization_gaps_std']
+    fig, ax = plt.subplots(figsize=(7, 4.5))
 
-        valid_layers = []
-        valid_gaps_mean = []
-        valid_gaps_std = []
+    # Load data for each layer configuration
+    results_dir = 'results/exp5'
+    layer_configs = [1, 2, 3, 4, 5]
 
-        for n, gap_mean, gap_std in zip(layers, gaps_mean, gaps_std):
-            if gap_mean is not None and n >= 2:
-                valid_layers.append(n)
-                valid_gaps_mean.append(gap_mean)
-                valid_gaps_std.append(gap_std)
+    marker = 'o'
+    marker_size = 120
 
-        if valid_layers:
-            plt.errorbar(valid_layers, valid_gaps_mean, yerr=valid_gaps_std,
-                         label='All-Conv (128 channels/layer)', color='green', marker='o', capsize=5, linewidth=2)
+    # Collect all data points for overall trend line
+    all_gen_gaps = []
+    all_mi_diffs = []
 
-    except FileNotFoundError:
-        print(f"Results not found for All-Conv (exp5)")
+    for n_layers in layer_configs:
+        # Load all seeds for this layer config
+        pattern = os.path.join(results_dir, f"mlp_mnist_layers{n_layers}_seed*_results.npz")
+        files = glob.glob(pattern)
 
-    plt.xlabel('Number of Convolutional Layers', fontsize=12)
-    plt.ylabel('Generalization Gap (%)', fontsize=12)
-    plt.title('Experiment 5: All-Conv Generalization Gap vs Network Depth (MI=2.5 bits)', fontsize=14)
-    plt.legend(fontsize=11)
-    plt.grid(True, alpha=0.3)
+        if not files:
+            print(f"No results found for {n_layers} layers")
+            continue
+
+        gen_gaps = []
+        mi_diffs = []
+
+        for fpath in files:
+            data = np.load(fpath, allow_pickle=True)
+            gen_gaps.append(float(data['final_gen_gap']))
+            mi_diffs.append(float(data['final_mi_diff']))
+
+        # Add to global lists for trend line
+        all_gen_gaps.extend(gen_gaps)
+        all_mi_diffs.extend(mi_diffs)
+
+        # Get color for this architecture
+        color = colors[n_layers]
+
+        # Plot scatter points
+        ax.scatter(gen_gaps, mi_diffs,
+                  c=color, marker=marker, s=marker_size, alpha=0.75,
+                  edgecolors='black', linewidths=1.0,
+                  label=f'{n_layers} layer{"s" if n_layers > 1 else ""}',
+                  zorder=3)
+
+    # Add overall trend line if we have data
+    if len(all_gen_gaps) > 1:
+        # Fit linear regression
+        z = np.polyfit(all_gen_gaps, all_mi_diffs, 1)
+        p = np.poly1d(z)
+
+        # Calculate R²
+        y_pred = p(all_gen_gaps)
+        ss_res = np.sum((np.array(all_mi_diffs) - y_pred) ** 2)
+        ss_tot = np.sum((np.array(all_mi_diffs) - np.mean(all_mi_diffs)) ** 2)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+        # Plot trend line
+        x_trend = np.linspace(min(all_gen_gaps), max(all_gen_gaps), 100)
+        y_trend = p(x_trend)
+        ax.plot(x_trend, y_trend, 'k-', linewidth=2.5, alpha=0.5, zorder=2)
+
+        # Add R² text on the graph (lower left)
+        ax.text(0.05, 0.05, f'$R^2$ = {r_squared:.3f}',
+               transform=ax.transAxes, fontsize=14, fontweight='bold',
+               verticalalignment='bottom', horizontalalignment='left',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.95,
+                       edgecolor='black', linewidth=1.2, pad=0.5))
+
+    # Publication-quality styling
+    ax.set_xlabel('Generalization Gap (%)', fontsize=16, fontweight='normal')
+    ax.set_ylabel('Layer 1 Subset Synergy', fontsize=16, fontweight='normal')
+    ax.set_title('Demonstrating Corollary 1', fontsize=16, fontweight='bold', pad=8)
+
+    # Tick labels
+    ax.tick_params(axis='both', which='major', labelsize=14)
+
+    # Legend
+    ax.legend(loc='best', fontsize=12, frameon=True, fancybox=False,
+              edgecolor='black', framealpha=1)
+
+    # Remove grid lines
+    ax.grid(False)
+
+    # Black border (spines)
+    for spine in ax.spines.values():
+        spine.set_edgecolor('black')
+        spine.set_linewidth(1.5)
+
+    # Set background color to white
+    ax.set_facecolor('white')
+    fig.patch.set_facecolor('white')
+
+    plt.tight_layout()
 
     os.makedirs('plots', exist_ok=True)
-    plt.savefig('plots/experiment_5_allconv_gap_vs_depth.png', dpi=300, bbox_inches='tight')
+    plt.savefig('plots/experiment_5_mnist_mi_diff_vs_gen_gap_by_layers.png', dpi=600, bbox_inches='tight', facecolor='white')
     plt.close()
 
-    print("Experiment 5 plot saved to plots/experiment_5_allconv_gap_vs_depth.png")
+    print("Experiment 5 plot saved to plots/experiment_5_mnist_mi_diff_vs_gen_gap_by_layers.png")
 
 
 def plot_experiment_4_occlusion():

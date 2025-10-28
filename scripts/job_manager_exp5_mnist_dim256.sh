@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp5_mlp_mnist_dim256
-#$ -t 1-15
+#$ -t 1-50
 set -euo pipefail
 
 hostname
