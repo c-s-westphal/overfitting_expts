@@ -63,7 +63,18 @@ date
 echo "Running varying samples experiment: model=$model, dataset_size=$dataset_size, seed=$seed"
 
 # ---------------------------------------------------------------------
-# 5.  Run single experiment
+# 5.  Check GPU availability before running
+# ---------------------------------------------------------------------
+echo "Checking GPU availability..."
+if command -v nvidia-smi &> /dev/null; then
+  nvidia-smi
+  echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
+else
+  echo "nvidia-smi not available"
+fi
+
+# ---------------------------------------------------------------------
+# 6.  Run single experiment
 # ---------------------------------------------------------------------
 echo "Starting training..."
 python3.9 -u experiments/exp1_single_run.py \
