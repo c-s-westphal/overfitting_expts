@@ -748,18 +748,18 @@ def plot_experiment_5():
 
     # Publication-quality color scheme for layers
     colors = {
-        1: '#F39B7F',   # Peach
-        2: '#E64B35',   # Red-orange
-        3: '#4DBBD5',   # Cyan
-        4: '#00A087',   # Teal
-        5: '#3C5488'    # Blue
+        2: '#F39B7F',   # Peach
+        3: '#E64B35',   # Red-orange
+        4: '#4DBBD5',   # Cyan
+        5: '#00A087',   # Teal
+        6: '#3C5488'    # Blue
     }
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
 
     # Load data for each layer configuration
     results_dir = 'results/exp5'
-    layer_configs = [1, 2, 3, 4, 5]
+    layer_configs = [2, 3, 4, 5, 6]
 
     marker = 'o'
     marker_size = 120
