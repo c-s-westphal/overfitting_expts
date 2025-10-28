@@ -4,14 +4,31 @@ import numpy as np
 import os
 from utils.results_utils import load_experiment_results, aggregate_results, load_exp1_results_from_per_seed, load_exp2_results_from_per_seed, load_exp3_results_from_per_seed, load_exp4_results_from_per_seed, load_exp5_results_from_per_seed
 
+# Set up Times New Roman font for publication-quality plots
+plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.serif'] = ['Times New Roman']
+plt.rcParams['mathtext.fontset'] = 'custom'
+plt.rcParams['mathtext.rm'] = 'Times New Roman'
+plt.rcParams['mathtext.it'] = 'Times New Roman:italic'
+plt.rcParams['mathtext.bf'] = 'Times New Roman:bold'
+
 
 def plot_experiment_1():
+    """Plot Experiment 1: Generalization gap vs training set size with publication-quality styling."""
     models = ['VGG9', 'VGG11', 'VGG13', 'VGG16', 'VGG19']
-    colors = ['red', 'blue', 'green', 'orange', 'purple']
-    
-    plt.figure(figsize=(12, 8))
-    
-    for model, color in zip(models, colors):
+
+    # Publication-quality color scheme
+    colors = {
+        'VGG9': '#F39B7F',   # Peach
+        'VGG11': '#E64B35',  # Red-orange
+        'VGG13': '#4DBBD5',  # Cyan
+        'VGG16': '#00A087',  # Teal
+        'VGG19': '#3C5488'   # Blue
+    }
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+
+    for model in models:
         try:
             # Prefer per-seed aggregation; fallback to pre-aggregated file if absent
             try:
@@ -19,49 +36,93 @@ def plot_experiment_1():
             except FileNotFoundError:
                 results = load_experiment_results('exp1', model)
             aggregated = aggregate_results(results)
-            
+
             sizes = results['dataset_sizes']
             gaps_mean = aggregated['generalization_gaps_mean']
             gaps_std = aggregated['generalization_gaps_std']
-            
+
             valid_sizes = []
             valid_gaps_mean = []
             valid_gaps_std = []
-            
+
             for i, (size, gap_mean, gap_std) in enumerate(zip(sizes, gaps_mean, gaps_std)):
                 if gap_mean is not None:
                     valid_sizes.append(size)
                     valid_gaps_mean.append(gap_mean)
                     valid_gaps_std.append(gap_std)
-            
+
             if valid_sizes:
-                plt.errorbar(valid_sizes, valid_gaps_mean, yerr=valid_gaps_std, 
-                           label=model, color=color, marker='o', capsize=5)
-        
+                valid_sizes = np.array(valid_sizes)
+                valid_gaps_mean = np.array(valid_gaps_mean)
+                valid_gaps_std = np.array(valid_gaps_std)
+
+                # Plot line without markers
+                ax.plot(valid_sizes, valid_gaps_mean,
+                       color=colors[model],
+                       linewidth=2.5,
+                       label=model,
+                       alpha=0.85)
+
+                # Add shaded error region
+                ax.fill_between(valid_sizes,
+                               valid_gaps_mean - valid_gaps_std,
+                               valid_gaps_mean + valid_gaps_std,
+                               color=colors[model],
+                               alpha=0.2)
+
         except FileNotFoundError:
             print(f"Results not found for {model}")
-    
-    plt.xlabel('Training Set Size')
-    plt.ylabel('Generalization Gap (%)')
-    plt.title('Generalization Gap vs Training Set Size')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.xscale('log')
-    
+
+    # Publication-quality styling
+    ax.set_xlabel('Training Set Size', fontsize=16, fontweight='normal')
+    ax.set_ylabel('Generalization Gap (%)', fontsize=16, fontweight='normal')
+    ax.set_title('Generalization Gap vs Training Set Size', fontsize=16, fontweight='bold', pad=10)
+    ax.set_xscale('log')
+
+    # Increase tick label size
+    ax.tick_params(axis='both', which='major', labelsize=14)
+
+    # Legend with updated styling
+    ax.legend(fontsize=13, loc='best', frameon=True, fancybox=False,
+              edgecolor='black', framealpha=1)
+
+    # Remove grid lines
+    ax.grid(False)
+
+    # Black border (spines)
+    for spine in ax.spines.values():
+        spine.set_edgecolor('black')
+        spine.set_linewidth(1.5)
+
+    # Set background color to white
+    ax.set_facecolor('white')
+    fig.patch.set_facecolor('white')
+
+    plt.tight_layout()
+
     os.makedirs('plots', exist_ok=True)
-    #plt.savefig('plots/experiment_1_generalization_gap.png', dpi=300, bbox_inches='tight')
-    plt.show()
-    
+    plt.savefig('plots/experiment_1_generalization_gap.png', dpi=600, bbox_inches='tight', facecolor='white')
+    plt.close()
+
     print("Experiment 1 plot saved to plots/experiment_1_generalization_gap.png")
 
 
 def plot_experiment_2():
+    """Plot Experiment 2: Generalization gap vs MI of special pixel with publication-quality styling."""
     models = ['VGG9', 'VGG11', 'VGG13', 'VGG16', 'VGG19']
-    colors = ['red', 'blue', 'green', 'orange', 'purple']
-    
-    plt.figure(figsize=(12, 8))
-    
-    for model, color in zip(models, colors):
+
+    # Publication-quality color scheme
+    colors = {
+        'VGG9': '#F39B7F',   # Peach
+        'VGG11': '#E64B35',  # Red-orange
+        'VGG13': '#4DBBD5',  # Cyan
+        'VGG16': '#00A087',  # Teal
+        'VGG19': '#3C5488'   # Blue
+    }
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+
+    for model in models:
         try:
             # Prefer per-seed aggregation; fallback to pre-aggregated file if absent
             try:
@@ -69,38 +130,73 @@ def plot_experiment_2():
             except FileNotFoundError:
                 results = load_experiment_results('exp2', model)
             aggregated = aggregate_results(results)
-            
+
             mi_values = results['mi_values']
             gaps_mean = aggregated['generalization_gaps_mean']
             gaps_std = aggregated['generalization_gaps_std']
-            
+
             valid_mi = []
             valid_gaps_mean = []
             valid_gaps_std = []
-            
+
             for i, (mi, gap_mean, gap_std) in enumerate(zip(mi_values, gaps_mean, gaps_std)):
                 if gap_mean is not None:
                     valid_mi.append(mi)
                     valid_gaps_mean.append(gap_mean)
                     valid_gaps_std.append(gap_std)
-            
+
             if valid_mi:
-                plt.errorbar(valid_mi, valid_gaps_mean, yerr=valid_gaps_std, 
-                           label=model, color=color, marker='o', capsize=5)
-        
+                valid_mi = np.array(valid_mi)
+                valid_gaps_mean = np.array(valid_gaps_mean)
+                valid_gaps_std = np.array(valid_gaps_std)
+
+                # Plot line without markers
+                ax.plot(valid_mi, valid_gaps_mean,
+                       color=colors[model],
+                       linewidth=2.5,
+                       label=model,
+                       alpha=0.85)
+
+                # Add shaded error region
+                ax.fill_between(valid_mi,
+                               valid_gaps_mean - valid_gaps_std,
+                               valid_gaps_mean + valid_gaps_std,
+                               color=colors[model],
+                               alpha=0.2)
+
         except FileNotFoundError:
             print(f"Results not found for {model}")
-    
-    plt.xlabel('Mutual Information (bits)')
-    plt.ylabel('Generalization Gap (%)')
-    plt.title('Generalization Gap vs Mutual Information of Special Pixel')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    
+
+    # Publication-quality styling
+    ax.set_xlabel('Mutual Information (bits)', fontsize=16, fontweight='normal')
+    ax.set_ylabel('Generalization Gap (%)', fontsize=16, fontweight='normal')
+    ax.set_title('Generalization Gap vs Mutual Information of Special Pixel', fontsize=16, fontweight='bold', pad=10)
+
+    # Increase tick label size
+    ax.tick_params(axis='both', which='major', labelsize=14)
+
+    # Legend with updated styling
+    ax.legend(fontsize=13, loc='best', frameon=True, fancybox=False,
+              edgecolor='black', framealpha=1)
+
+    # Remove grid lines
+    ax.grid(False)
+
+    # Black border (spines)
+    for spine in ax.spines.values():
+        spine.set_edgecolor('black')
+        spine.set_linewidth(1.5)
+
+    # Set background color to white
+    ax.set_facecolor('white')
+    fig.patch.set_facecolor('white')
+
+    plt.tight_layout()
+
     os.makedirs('plots', exist_ok=True)
-    plt.savefig('plots/experiment_2_mi_vs_gap.png', dpi=300, bbox_inches='tight')
+    plt.savefig('plots/experiment_2_mi_vs_gap.png', dpi=600, bbox_inches='tight', facecolor='white')
     plt.close()
-    
+
     print("Experiment 2 plot saved to plots/experiment_2_mi_vs_gap.png")
 
 
