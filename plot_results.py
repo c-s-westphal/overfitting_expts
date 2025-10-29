@@ -799,6 +799,14 @@ def plot_experiment_5():
                   label=f'{n_layers} layer{"s" if n_layers > 1 else ""}',
                   zorder=3)
 
+        # Plot mean as a star
+        mean_gen_gap = np.mean(gen_gaps)
+        mean_mi_diff = np.mean(mi_diffs)
+        ax.scatter(mean_gen_gap, mean_mi_diff,
+                  c=color, marker='*', s=400, alpha=1.0,
+                  edgecolors='black', linewidths=2.0,
+                  zorder=4)
+
     # Add overall trend line if we have data
     if len(all_gen_gaps) > 1:
         # Fit linear regression
