@@ -528,16 +528,18 @@ def main():
         test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
 
     elif args.dataset == 'mnist':
-        # MNIST: Optional basic augmentation
+        # MNIST: Optional augmentation
         print("Loading MNIST data...", flush=True)
         if args.augment:
-            # Basic augmentation: small rotations only
+            # Augmentation: rotation, crop, and flip
             train_transform = transforms.Compose([
                 transforms.RandomRotation(10),
+                transforms.RandomCrop(28, padding=4),
+                transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize((0.1307,), (0.3081,)),
             ])
-            print("Using MNIST augmentation: rotation (±10°)", flush=True)
+            print("Using MNIST augmentation: rotation (±10°) + random crop (padding=4) + horizontal flip", flush=True)
         else:
             train_transform = transforms.Compose([
                 transforms.ToTensor(),
