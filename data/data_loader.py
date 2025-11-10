@@ -257,3 +257,115 @@ def get_mnist_special_pixel_dataloaders(batch_size=128, num_workers=4, noise_lev
     )
 
     return trainloader, testloader
+
+
+def get_celeba_transforms(augment=True, image_size=64):
+    """
+    Get CelebA transforms with center crop and resize.
+
+    Args:
+        augment: Whether to use data augmentation (horizontal flip)
+        image_size: Target image size (default: 64)
+
+    Returns:
+        transform_train, transform_test
+    """
+    # Standard ImageNet normalization (commonly used for CelebA)
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+
+    if augment:
+        transform_train = transforms.Compose([
+            transforms.CenterCrop(178),
+            transforms.Resize(image_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,
+        ])
+    else:
+        transform_train = transforms.Compose([
+            transforms.CenterCrop(178),
+            transforms.Resize(image_size),
+            transforms.ToTensor(),
+            normalize,
+        ])
+
+    transform_test = transforms.Compose([
+        transforms.CenterCrop(178),
+        transforms.Resize(image_size),
+        transforms.ToTensor(),
+        normalize,
+    ])
+
+    return transform_train, transform_test
+
+
+def get_celeba_dataloaders(batch_size=128, num_workers=4, augment=True,
+                           image_size=64, seed=None, data_root='./data'):
+    """
+    Get CelebA dataloaders for Male/Female classification.
+
+    Args:
+        batch_size: Batch size for dataloaders
+        num_workers: Number of workers for data loading
+        augment: Whether to use data augmentation (horizontal flip)
+        image_size: Target image size (default: 64)
+        seed: Random seed for reproducibility
+        data_root: Root directory for data
+
+    Returns:
+        trainloader, testloader (Male=1, Female=0)
+    """
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+
+    transform_train, transform_test = get_celeba_transforms(augment=augment, image_size=image_size)
+
+    # CelebA Male attribute is at index 20 (0-indexed)
+    # We'll use target_type='attr' and then extract the Male column
+    trainset = torchvision.datasets.CelebA(
+        root=data_root,
+        split='train',
+        target_type='attr',
+        download=True,
+        transform=transform_train
+    )
+
+    testset = torchvision.datasets.CelebA(
+        root=data_root,
+        split='valid',  # Use validation split as test set
+        target_type='attr',
+        download=True,
+        transform=transform_test
+    )
+
+    # Wrap datasets to extract only Male attribute (index 20)
+    class MaleClassificationDataset(torch.utils.data.Dataset):
+        def __init__(self, celeba_dataset, male_attr_idx=20):
+            self.celeba_dataset = celeba_dataset
+            self.male_attr_idx = male_attr_idx
+
+        def __len__(self):
+            return len(self.celeba_dataset)
+
+        def __getitem__(self, idx):
+            img, attrs = self.celeba_dataset[idx]
+            # Extract Male attribute (0 or 1)
+            label = attrs[self.male_attr_idx].item()
+            return img, label
+
+    trainset = MaleClassificationDataset(trainset)
+    testset = MaleClassificationDataset(testset)
+
+    trainloader = DataLoader(
+        trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+    )
+
+    testloader = DataLoader(
+        testset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    )
+
+    return trainloader, testloader

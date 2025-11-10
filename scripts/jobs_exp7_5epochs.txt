@@ -1,0 +1,15 @@
+vgg9 0
+vgg9 1
+vgg9 2
+vgg11 0
+vgg11 1
+vgg11 2
+vgg13 0
+vgg13 1
+vgg13 2
+vgg16 0
+vgg16 1
+vgg16 2
+vgg19 0
+vgg19 1
+vgg19 2
