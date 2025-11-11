@@ -35,8 +35,11 @@ mkdir -p data
 export KAGGLE_CONFIG_DIR="$TMPDIR/kaggle"
 mkdir -p "$KAGGLE_CONFIG_DIR"
 
-# Copy kaggle.json from home if it exists, otherwise will need to set env vars
-if [[ -f "$HOME/.kaggle/kaggle.json" ]]; then
+# Copy kaggle.json from project directory or home
+if [[ -f ".kaggle/kaggle.json" ]]; then
+  cp ".kaggle/kaggle.json" "$KAGGLE_CONFIG_DIR/"
+  chmod 600 "$KAGGLE_CONFIG_DIR/kaggle.json"
+elif [[ -f "$HOME/.kaggle/kaggle.json" ]]; then
   cp "$HOME/.kaggle/kaggle.json" "$KAGGLE_CONFIG_DIR/"
   chmod 600 "$KAGGLE_CONFIG_DIR/kaggle.json"
 fi
