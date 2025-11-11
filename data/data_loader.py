@@ -326,11 +326,12 @@ def get_celeba_dataloaders(batch_size=128, num_workers=4, augment=True,
 
     # CelebA Male attribute is at index 20 (0-indexed)
     # We'll use target_type='attr' and then extract the Male column
+    # download=False because we download manually from Kaggle to avoid Google Drive quota
     trainset = torchvision.datasets.CelebA(
         root=data_root,
         split='train',
         target_type='attr',
-        download=True,
+        download=False,
         transform=transform_train
     )
 
@@ -338,7 +339,7 @@ def get_celeba_dataloaders(batch_size=128, num_workers=4, augment=True,
         root=data_root,
         split='valid',  # Use validation split as test set
         target_type='attr',
-        download=True,
+        download=False,
         transform=transform_test
     )
 
