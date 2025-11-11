@@ -324,6 +324,14 @@ def get_celeba_dataloaders(batch_size=128, num_workers=4, augment=True,
 
     transform_train, transform_test = get_celeba_transforms(augment=augment, image_size=image_size)
 
+    # Monkey-patch CelebA to skip MD5 integrity check (we downloaded from Kaggle, not Google Drive)
+    original_check = torchvision.datasets.CelebA._check_integrity
+    def skip_integrity_check(self):
+        # Just check if img_align_celeba directory exists
+        import os
+        return os.path.isdir(os.path.join(self.root, self.base_folder, "img_align_celeba"))
+    torchvision.datasets.CelebA._check_integrity = skip_integrity_check
+
     # CelebA Male attribute is at index 20 (0-indexed)
     # We'll use target_type='attr' and then extract the Male column
     # download=False because we download manually from Kaggle to avoid Google Drive quota
@@ -342,6 +350,9 @@ def get_celeba_dataloaders(batch_size=128, num_workers=4, augment=True,
         download=False,
         transform=transform_test
     )
+
+    # Restore original integrity check
+    torchvision.datasets.CelebA._check_integrity = original_check
 
     # Wrap datasets to extract only Male attribute (index 20)
     class MaleClassificationDataset(torch.utils.data.Dataset):
