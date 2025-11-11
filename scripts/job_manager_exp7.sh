@@ -45,6 +45,10 @@ mkdir -p results/exp7
 mkdir -p logs/exp7
 mkdir -p data
 
+# Redirect HOME to TMPDIR to avoid home quota issues
+export HOME="$TMPDIR/home"
+mkdir -p "$HOME/.cache"
+
 # ---------------------------------------------------------------------
 # 4.  Extract task-specific parameters
 # ---------------------------------------------------------------------
