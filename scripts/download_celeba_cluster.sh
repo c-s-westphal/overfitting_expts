@@ -28,8 +28,16 @@ fi
 # Create data directory
 mkdir -p data
 
-# Run download script
-python3.9 scripts/download_celeba.py
+# Redirect HOME to TMPDIR to avoid home quota issues with gdown cookies
+export HOME="$TMPDIR/home"
+mkdir -p "$HOME/.cache/gdown"
+
+# Run download script with unbuffered output so we can see progress
+python3.9 -u scripts/download_celeba.py
 
 date
 echo "Download complete!"
+echo ""
+echo "You can now submit your exp7 jobs:"
+echo "  qsub scripts/job_manager_exp7.sh"
+echo "  qsub scripts/job_manager_exp7_5epochs.sh"
