@@ -30,18 +30,17 @@ print("\nDownloading CelebA from Kaggle...")
 print("This may take 10-20 minutes.\n")
 
 try:
-    import subprocess
+    from kaggle.api.kaggle_api_extended import KaggleApi
 
-    # Use kaggle CLI to download (without --unzip, we'll handle that manually)
+    # Initialize Kaggle API
+    print("Initializing Kaggle API...")
+    api = KaggleApi()
+    api.authenticate()
+
+    # Use kaggle API to download
     print("Downloading dataset archive...")
-    result = subprocess.run(
-        ['kaggle', 'datasets', 'download', '-d', 'jessicali9530/celeba-dataset', '-p', celeba_dir],
-        capture_output=True,
-        text=True
-    )
-
-    if result.returncode != 0:
-        raise Exception(f"Kaggle download failed: {result.stderr}")
+    api.dataset_download_files('jessicali9530/celeba-dataset', path=celeba_dir, unzip=False)
+    print("Download complete!")
 
     print("Download complete. Extracting files...")
 
