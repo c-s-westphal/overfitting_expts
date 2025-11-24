@@ -1,8 +1,8 @@
 """
-Experiment 7: Full-depth VGG models with occlusion sensitivity tracking on CelebA.
+Experiment 8: Variable-depth MLP models with occlusion sensitivity tracking on CelebA.
 
-Studies occlusion sensitivity across training epochs for different VGG architecture sizes
-(VGG9, VGG11, VGG13, VGG16, VGG19) using full depth for each architecture.
+Studies occlusion sensitivity across training epochs for different MLP depths
+(1, 5, 10, 15, 20, 25 hidden layers) using fixed 512 neurons per hidden layer.
 Trains on CelebA Male/Female classification to study natural shortcuts (blonde hair).
 Can train for 1 or multiple epochs (use --epochs flag).
 """
@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.vgg_variable_family import VGG9_Variable, VGG11_Variable, VGG13_Variable, VGG16_Variable, VGG19_Variable
+from models.mlp_celeba import MLP1_CelebA, MLP5_CelebA, MLP10_CelebA, MLP15_CelebA, MLP20_CelebA, MLP25_CelebA
 from data.data_loader import get_celeba_dataloaders
 
 
@@ -159,7 +159,7 @@ def train_model_multi_epoch(model, trainloader, testloader, device='cuda', lr=0.
     Train model for multiple epochs and compute occlusion sensitivity at each epoch.
 
     Args:
-        model: The VGG model to train
+        model: The MLP model to train
         trainloader: Training data loader
         testloader: Test data loader
         device: Device to train on (cuda or cpu)
@@ -234,11 +234,11 @@ def train_model_multi_epoch(model, trainloader, testloader, device='cuda', lr=0.
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Experiment 7: Full-depth VGG with CelebA Male/Female classification'
+        description='Experiment 8: Variable-depth MLP with CelebA Male/Female classification'
     )
-    parser.add_argument('--arch', type=str, required=True,
-                        choices=['vgg9', 'vgg11', 'vgg13', 'vgg16', 'vgg19'],
-                        help='VGG architecture variant')
+    parser.add_argument('--depth', type=int, required=True,
+                        choices=[1, 5, 10, 15, 20, 25],
+                        help='Number of hidden layers in MLP')
     parser.add_argument('--seed', type=int, required=True,
                         help='Random seed')
     parser.add_argument('--batch_size', type=int, default=128,
@@ -284,23 +284,25 @@ def main():
     if args.device == 'cuda' and torch.cuda.is_available():
         torch.cuda.manual_seed(args.seed)
 
-    # Build model - use full depth for each architecture
-    arch_map = {
-        'vgg9': ('VGG9', VGG9_Variable, 6),
-        'vgg11': ('VGG11', VGG11_Variable, 8),
-        'vgg13': ('VGG13', VGG13_Variable, 10),
-        'vgg16': ('VGG16', VGG16_Variable, 13),
-        'vgg19': ('VGG19', VGG19_Variable, 16),
+    # Build model - map depth to appropriate model constructor
+    depth_map = {
+        1: ('MLP1', MLP1_CelebA, 1),
+        5: ('MLP5', MLP5_CelebA, 5),
+        10: ('MLP10', MLP10_CelebA, 10),
+        15: ('MLP15', MLP15_CelebA, 15),
+        20: ('MLP20', MLP20_CelebA, 20),
+        25: ('MLP25', MLP25_CelebA, 25),
     }
 
-    model_name, model_fn, full_depth = arch_map[args.arch]
-    model = model_fn(num_classes=2, n_layers=full_depth, with_bn=True, dropout_p=0.0)
+    model_name, model_fn, n_layers = depth_map[args.depth]
+    model = model_fn(num_classes=2, n_layers=n_layers, with_bn=True, dropout_p=0.0, image_size=args.image_size)
 
     print(f"\n{'='*80}")
-    print(f"Experiment 7: {model_name} Full Depth - CelebA Male/Female ({args.epochs} epoch(s))")
+    print(f"Experiment 8: {model_name} ({n_layers} layers) - CelebA Male/Female ({args.epochs} epoch(s))")
     print(f"{'='*80}")
     print(f"Architecture:     {model_name}")
-    print(f"Num Layers:       {full_depth} (full depth)")
+    print(f"Num Layers:       {n_layers} hidden layers")
+    print(f"Hidden Dim:       512 neurons per layer")
     print(f"Dataset:          CelebA (Male/Female classification)")
     print(f"Image Size:       {args.image_size}x{args.image_size}")
     print(f"Seed:             {args.seed}")
@@ -329,7 +331,7 @@ def main():
     # Prepare results
     result = {
         'model': model_name,
-        'n_layers': full_depth,
+        'n_layers': n_layers,
         'dataset': 'celeba',
         'image_size': args.image_size,
         'seed': args.seed,
@@ -363,12 +365,11 @@ def main():
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Naming convention: vgg{X}_seed{seed}_results.npz or vgg{X}_seed{seed}_{N}epochs_results.npz
-    arch_num = model_name.lower()
+    # Naming convention: mlp{X}_seed{seed}_results.npz or mlp{X}_seed{seed}_{N}epochs_results.npz
     if args.epochs == 1:
-        save_path = f"{args.output_dir}/{arch_num}_seed{args.seed}_results.npz"
+        save_path = f"{args.output_dir}/{model_name.lower()}_seed{args.seed}_results.npz"
     else:
-        save_path = f"{args.output_dir}/{arch_num}_seed{args.seed}_{args.epochs}epochs_results.npz"
+        save_path = f"{args.output_dir}/{model_name.lower()}_seed{args.seed}_{args.epochs}epochs_results.npz"
 
     np.savez(save_path, **result)
     print(f"Results saved to: {save_path}\n")

@@ -1940,6 +1940,369 @@ def plot_experiment_7_occlusion_multi_epoch_by_class():
     print("Experiment 7 multi-epoch by-class occlusion plot saved to plots/experiment_7_occlusion_sensitivity_multi_epoch_by_class.png")
 
 
+def plot_experiment_7_occlusion_per_epoch():
+    """Plot Experiment 7 occlusion sensitivity by class - separate PNG for each epoch.
+
+    Creates individual PNG files for each epoch, showing 2 rows (Female, Male) × 5 columns (VGG architectures).
+    Useful for analyzing progression across training epochs.
+    """
+    import matplotlib.gridspec as gridspec
+    import glob
+
+    results_dir = 'results/exp7'
+
+    # Full-depth VGG architectures: VGG9, VGG11, VGG13, VGG16, VGG19
+    architectures = ['vgg9', 'vgg11', 'vgg13', 'vgg16', 'vgg19']
+    arch_display_names = ['VGG9', 'VGG11', 'VGG13', 'VGG16', 'VGG19']
+    class_names = ['Female', 'Male']  # Class 0 = Female, Class 1 = Male
+
+    # Find all available epoch numbers by checking one architecture
+    sample_files = glob.glob(os.path.join(results_dir, "vgg11_seed*_results.npz"))
+    if not sample_files:
+        print("No results found for experiment 7 per-epoch plotting")
+        return
+
+    # Determine available epochs from the first file
+    sample_data = np.load(sample_files[0], allow_pickle=True)
+    available_epochs = []
+    for key in sample_data.keys():
+        if key.startswith('occlusion_maps_epoch'):
+            epoch_num = int(key.replace('occlusion_maps_epoch', ''))
+            available_epochs.append(epoch_num)
+
+    available_epochs = sorted(available_epochs)
+
+    if not available_epochs:
+        print("No occlusion data found in results for experiment 7")
+        return
+
+    print(f"Found occlusion data for epochs: {available_epochs}")
+
+    os.makedirs('plots/exp7_per_epoch', exist_ok=True)
+
+    # Generate one plot per epoch
+    for epoch in available_epochs:
+        fig = plt.figure(figsize=(5 * len(architectures), 5 * 2))
+        gs = gridspec.GridSpec(2, len(architectures), figure=fig, hspace=0.25, wspace=0.3)
+
+        found_any = False
+        im = None
+
+        for row_idx, class_idx in enumerate([0, 1]):  # Female=0, Male=1
+            for col_idx, (arch_name, display_name) in enumerate(zip(architectures, arch_display_names)):
+                # Load all seeds and average occlusion maps FOR THIS CLASS ONLY
+                all_files = glob.glob(os.path.join(results_dir, f"{arch_name}_seed*_results.npz"))
+
+                if not all_files:
+                    continue
+
+                # Collect occlusion maps across all seeds for THIS CLASS ONLY
+                epoch_maps_this_class = []
+                sample_image = None
+
+                for result_file in all_files:
+                    data = np.load(result_file, allow_pickle=True)
+
+                    # Check if occlusion data exists for this epoch
+                    occlusion_key = f'occlusion_maps_epoch{epoch}'
+                    if occlusion_key not in data:
+                        continue
+
+                    occlusion_epoch = data[occlusion_key]  # Shape: (2, 64, 64) for CelebA
+
+                    # Extract only this class's occlusion map
+                    epoch_maps_this_class.append(occlusion_epoch[class_idx])
+
+                    # Use seed 0's sample image for this class
+                    if sample_image is None and 'seed0' in result_file:
+                        sample_images_key = f'sample_images_epoch{epoch}'
+                        if sample_images_key in data:
+                            sample_image = data[sample_images_key][class_idx]
+
+                if not epoch_maps_this_class:
+                    continue
+
+                # Use first available sample image if seed0 not found
+                if sample_image is None:
+                    data = np.load(all_files[0], allow_pickle=True)
+                    sample_images_key = f'sample_images_epoch{epoch}'
+                    if sample_images_key in data:
+                        sample_image = data[sample_images_key][class_idx]
+
+                # Average occlusion maps across all seeds (for this class only)
+                occ_map_epoch = np.mean(epoch_maps_this_class, axis=0)
+
+                # Direct min-max normalization (power transform temporarily removed)
+                occ_epoch_norm = (occ_map_epoch - occ_map_epoch.min()) / (occ_map_epoch.max() - occ_map_epoch.min() + 1e-10)
+
+                if sample_image is not None:
+                    # Convert RGB image from (3, 64, 64) to (64, 64, 3) for display
+                    sample_image_display = np.transpose(sample_image, (1, 2, 0))
+                    # Normalize to [0, 1] for display
+                    sample_image_display = (sample_image_display - sample_image_display.min()) / (sample_image_display.max() - sample_image_display.min() + 1e-10)
+
+                # Plot
+                ax = fig.add_subplot(gs[row_idx, col_idx])
+                if sample_image is not None:
+                    ax.imshow(sample_image_display)
+                im = ax.imshow(occ_epoch_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
+
+                # Add title only for top row (architecture names)
+                if row_idx == 0:
+                    ax.set_title(f'{display_name}', fontsize=12, fontweight='bold')
+                # Add class label for first column
+                if col_idx == 0:
+                    ax.set_ylabel(f'{class_names[class_idx]}', fontsize=11, fontweight='bold')
+
+                ax.axis('off')
+
+                found_any = True
+
+        # Check if we found any data for this epoch
+        if not found_any:
+            plt.close(fig)
+            continue
+
+        # Add colorbar
+        if im is not None:
+            cbar_ax = fig.add_axes([0.92, 0.25, 0.015, 0.5])
+            cbar = fig.colorbar(im, cax=cbar_ax)
+            cbar.set_label('Occlusion Sensitivity (normalized)', rotation=270, labelpad=20)
+
+        fig.suptitle(f'Experiment 7: Full-Depth VGG Occlusion Sensitivity on CelebA by Class - Epoch {epoch}',
+                     fontsize=14, y=0.98)
+
+        output_path = f'plots/exp7_per_epoch/experiment_7_occlusion_epoch{epoch:02d}.png'
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Saved: {output_path}")
+
+    print(f"\nExperiment 7 per-epoch plots saved to plots/exp7_per_epoch/")
+
+
+def plot_experiment_8_occlusion():
+    """Plot Experiment 8 occlusion sensitivity (epoch 1 only, variable-depth MLPs) on CelebA."""
+    import matplotlib.gridspec as gridspec
+    import glob
+
+    results_dir = 'results/exp8'
+
+    # MLP depths: 1, 5, 10, 15, 20, 25
+    depths = [1, 5, 10, 15, 20, 25]
+    depth_display_names = ['MLP1', 'MLP5', 'MLP10', 'MLP15', 'MLP20', 'MLP25']
+
+    # Create figure with single row
+    fig = plt.figure(figsize=(5 * len(depths), 5))
+    gs = gridspec.GridSpec(1, len(depths), figure=fig, hspace=0.3, wspace=0.3)
+
+    found_any = False
+    im = None
+
+    for col_idx, (depth, display_name) in enumerate(zip(depths, depth_display_names)):
+        # Load all seeds and average occlusion maps
+        all_files = glob.glob(os.path.join(results_dir, f"mlp{depth}_seed*_results.npz"))
+
+        if not all_files:
+            print(f"No results found for MLP depth {depth}")
+            continue
+
+        # Collect occlusion maps across all seeds AND all classes
+        epoch1_maps_all_classes = []
+        sample_image = None
+
+        for result_file in all_files:
+            data = np.load(result_file, allow_pickle=True)
+
+            # Check if occlusion data exists
+            if 'occlusion_maps_epoch1' not in data:
+                continue
+
+            occlusion_epoch1 = data['occlusion_maps_epoch1']  # Shape: (2, 64, 64) for CelebA
+
+            # Average across both classes for this seed
+            epoch1_maps_all_classes.append(np.mean(occlusion_epoch1, axis=0))
+
+            # Use seed 0's first sample image (class 0) just for display
+            if sample_image is None and 'seed0' in result_file:
+                sample_image = data['sample_images_epoch1'][0]
+
+        if not epoch1_maps_all_classes:
+            print(f"No occlusion data found for MLP depth {depth}")
+            continue
+
+        # Use first available sample image if seed0 not found
+        if sample_image is None:
+            data = np.load(all_files[0], allow_pickle=True)
+            if 'sample_images_epoch1' in data:
+                sample_image = data['sample_images_epoch1'][0]
+
+        # Average occlusion maps across all seeds (already averaged across classes)
+        occ_map_epoch1 = np.mean(epoch1_maps_all_classes, axis=0)
+
+        # Apply power transform to compress dynamic range
+        power = 0.5  # Square root transform
+
+        # Shift to non-negative before power transform
+        occ_epoch1_shifted = occ_map_epoch1 - occ_map_epoch1.min()
+        occ_epoch1_transformed = occ_epoch1_shifted ** power
+        occ_epoch1_norm = (occ_epoch1_transformed - occ_epoch1_transformed.min()) / (occ_epoch1_transformed.max() - occ_epoch1_transformed.min() + 1e-10)
+
+        if sample_image is not None:
+            # Convert RGB image from (3, 64, 64) to (64, 64, 3) for display
+            sample_image_display = np.transpose(sample_image, (1, 2, 0))
+            # Normalize to [0, 1] for display
+            sample_image_display = (sample_image_display - sample_image_display.min()) / (sample_image_display.max() - sample_image_display.min() + 1e-10)
+
+        # Plot epoch 1
+        ax = fig.add_subplot(gs[0, col_idx])
+        if sample_image is not None:
+            ax.imshow(sample_image_display)
+        im = ax.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
+        ax.set_title(f'{display_name}\nEpoch 1', fontsize=12)
+        ax.axis('off')
+
+        found_any = True
+
+    # Check if we found any data
+    if not found_any:
+        plt.close(fig)
+        print(f"No occlusion data found for experiment 8")
+        return
+
+    # Add colorbar
+    if im is not None:
+        cbar_ax = fig.add_axes([0.92, 0.25, 0.015, 0.5])
+        cbar = fig.colorbar(im, cax=cbar_ax)
+        cbar.set_label('Occlusion Sensitivity (normalized)', rotation=270, labelpad=20)
+
+    fig.suptitle('Experiment 8: Variable-Depth MLP Occlusion Sensitivity on CelebA (Male/Female) at Epoch 1',
+                 fontsize=14, y=0.98)
+
+    os.makedirs('plots', exist_ok=True)
+    plt.savefig('plots/experiment_8_occlusion_sensitivity.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print("Experiment 8 occlusion plot saved to plots/experiment_8_occlusion_sensitivity.png")
+
+
+def plot_experiment_8_occlusion_by_class():
+    """Plot Experiment 8 occlusion sensitivity by class (epoch 1 only, variable-depth MLPs) on CelebA.
+
+    Shows separate occlusion maps for Male and Female classes (2 rows × 6 depths).
+    """
+    import matplotlib.gridspec as gridspec
+    import glob
+
+    results_dir = 'results/exp8'
+
+    # MLP depths: 1, 5, 10, 15, 20, 25
+    depths = [1, 5, 10, 15, 20, 25]
+    depth_display_names = ['MLP1', 'MLP5', 'MLP10', 'MLP15', 'MLP20', 'MLP25']
+    class_names = ['Female', 'Male']  # Class 0 = Female, Class 1 = Male
+
+    # Create figure with 2 rows (classes) × 6 columns (depths)
+    fig = plt.figure(figsize=(5 * len(depths), 5 * 2))
+    gs = gridspec.GridSpec(2, len(depths), figure=fig, hspace=0.25, wspace=0.3)
+
+    found_any = False
+    im = None
+
+    for row_idx, class_idx in enumerate([0, 1]):  # Female=0, Male=1
+        for col_idx, (depth, display_name) in enumerate(zip(depths, depth_display_names)):
+            # Load all seeds and average occlusion maps FOR THIS CLASS ONLY
+            all_files = glob.glob(os.path.join(results_dir, f"mlp{depth}_seed*_results.npz"))
+
+            if not all_files:
+                print(f"No results found for MLP depth {depth}")
+                continue
+
+            # Collect occlusion maps across all seeds for THIS CLASS ONLY
+            epoch1_maps_this_class = []
+            sample_image = None
+
+            for result_file in all_files:
+                data = np.load(result_file, allow_pickle=True)
+
+                # Check if occlusion data exists
+                if 'occlusion_maps_epoch1' not in data:
+                    continue
+
+                occlusion_epoch1 = data['occlusion_maps_epoch1']  # Shape: (2, 64, 64) for CelebA
+
+                # Extract only this class's occlusion map
+                epoch1_maps_this_class.append(occlusion_epoch1[class_idx])
+
+                # Use seed 0's sample image for this class
+                if sample_image is None and 'seed0' in result_file:
+                    sample_image = data['sample_images_epoch1'][class_idx]
+
+            if not epoch1_maps_this_class:
+                print(f"No occlusion data found for MLP depth {depth} class {class_idx}")
+                continue
+
+            # Use first available sample image if seed0 not found
+            if sample_image is None:
+                data = np.load(all_files[0], allow_pickle=True)
+                if 'sample_images_epoch1' in data:
+                    sample_image = data['sample_images_epoch1'][class_idx]
+
+            # Average occlusion maps across all seeds (for this class only)
+            occ_map_epoch1 = np.mean(epoch1_maps_this_class, axis=0)
+
+            # Apply power transform to compress dynamic range
+            power = 0.5  # Square root transform
+
+            # Shift to non-negative before power transform
+            occ_epoch1_shifted = occ_map_epoch1 - occ_map_epoch1.min()
+            occ_epoch1_transformed = occ_epoch1_shifted ** power
+            occ_epoch1_norm = (occ_epoch1_transformed - occ_epoch1_transformed.min()) / (occ_epoch1_transformed.max() - occ_epoch1_transformed.min() + 1e-10)
+
+            if sample_image is not None:
+                # Convert RGB image from (3, 64, 64) to (64, 64, 3) for display
+                sample_image_display = np.transpose(sample_image, (1, 2, 0))
+                # Normalize to [0, 1] for display
+                sample_image_display = (sample_image_display - sample_image_display.min()) / (sample_image_display.max() - sample_image_display.min() + 1e-10)
+
+            # Plot
+            ax = fig.add_subplot(gs[row_idx, col_idx])
+            if sample_image is not None:
+                ax.imshow(sample_image_display)
+            im = ax.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
+
+            # Add title only for top row (architecture names)
+            if row_idx == 0:
+                ax.set_title(f'{display_name}', fontsize=12, fontweight='bold')
+            # Add class label for first column
+            if col_idx == 0:
+                ax.set_ylabel(f'{class_names[class_idx]}\nEpoch 1', fontsize=11, fontweight='bold')
+
+            ax.axis('off')
+
+            found_any = True
+
+    # Check if we found any data
+    if not found_any:
+        plt.close(fig)
+        print(f"No occlusion data found for experiment 8 by class")
+        return
+
+    # Add colorbar
+    if im is not None:
+        cbar_ax = fig.add_axes([0.92, 0.15, 0.015, 0.7])
+        cbar = fig.colorbar(im, cax=cbar_ax)
+        cbar.set_label('Occlusion Sensitivity (normalized)', rotation=270, labelpad=20)
+
+    fig.suptitle('Experiment 8: Variable-Depth MLP Occlusion Sensitivity on CelebA by Class at Epoch 1',
+                 fontsize=14, y=0.98)
+
+    os.makedirs('plots', exist_ok=True)
+    plt.savefig('plots/experiment_8_occlusion_sensitivity_by_class.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print("Experiment 8 occlusion by class plot saved to plots/experiment_8_occlusion_sensitivity_by_class.png")
+
+
 def main():
     print("Generating plots...")
     plot_experiment_1()
@@ -1954,6 +2317,9 @@ def main():
     plot_experiment_6_occlusion()
     plot_experiment_7_occlusion()
     plot_experiment_7_occlusion_by_class()
+    plot_experiment_7_occlusion_per_epoch()
+    plot_experiment_8_occlusion()
+    plot_experiment_8_occlusion_by_class()
     print("All plots generated successfully!")
 
 
