@@ -140,16 +140,16 @@ def evaluate(model, dataloader, criterion, device):
 
 
 def train_model(model, trainloader, testloader, device='cuda',
-                lr=0.001, weight_decay=1e-4, max_epochs=200, target_train_acc=100.0):
+                lr=0.001, weight_decay=1e-4, epochs=100):
     """
-    Train model until target train accuracy is reached.
+    Train model for a fixed number of epochs.
     """
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-    print(f"\nTraining until {target_train_acc}% train accuracy...")
-    pbar = tqdm(range(1, max_epochs + 1), desc="Training")
+    print(f"\nTraining for {epochs} epochs...")
+    pbar = tqdm(range(1, epochs + 1), desc="Training")
 
     for epoch in pbar:
         train_loss, train_acc = train_epoch(model, trainloader, criterion, optimizer, device)
@@ -160,19 +160,11 @@ def train_model(model, trainloader, testloader, device='cuda',
             'Test': f'{test_acc:.2f}%'
         })
 
-        if train_acc >= target_train_acc:
-            print(f"\nReached {target_train_acc}% train accuracy at epoch {epoch}")
-            return {
-                'train_acc': train_acc,
-                'test_acc': test_acc,
-                'epochs': epoch
-            }
-
-    print(f"\nDid not reach {target_train_acc}% after {max_epochs} epochs. Final: {train_acc:.2f}%")
+    print(f"\nTraining complete. Final train acc: {train_acc:.2f}%")
     return {
         'train_acc': train_acc,
         'test_acc': test_acc,
-        'epochs': max_epochs
+        'epochs': epochs
     }
 
 
@@ -490,12 +482,10 @@ def main():
                         help='Output directory for results')
     parser.add_argument('--lr', type=float, default=0.001,
                         help='Learning rate')
-    parser.add_argument('--max_epochs', type=int, default=200,
-                        help='Maximum epochs for initial training')
-    parser.add_argument('--retrain_epochs', type=int, default=10,
+    parser.add_argument('--epochs', type=int, default=100,
+                        help='Number of epochs for initial training')
+    parser.add_argument('--retrain_epochs', type=int, default=5,
                         help='Epochs for retraining after pruning')
-    parser.add_argument('--target_train_acc', type=float, default=100.0,
-                        help='Target train accuracy')
 
     args = parser.parse_args()
 
@@ -517,7 +507,8 @@ def main():
     print(f"Task:              MNIST Binary (0 vs 1)")
     print(f"Seed:              {args.seed}")
     print(f"Device:            {args.device}")
-    print(f"Target Train Acc:  {args.target_train_acc}%")
+    print(f"Epochs:            {args.epochs}")
+    print(f"Retrain Epochs:    {args.retrain_epochs}")
     print(f"{'='*80}\n")
 
     # Create model
@@ -543,8 +534,7 @@ def main():
     # Train model
     train_metrics = train_model(
         model, trainloader, testloader, device=args.device,
-        lr=args.lr, max_epochs=args.max_epochs,
-        target_train_acc=args.target_train_acc
+        lr=args.lr, epochs=args.epochs
     )
 
     original_train_acc = train_metrics['train_acc']
