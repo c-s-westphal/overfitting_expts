@@ -359,6 +359,33 @@ def collect_activations_and_outputs(model, dataloader, device):
     return activations, output_probs
 
 
+def add_jitter(data, jitter_scale=1e-6):
+    """
+    Add small jitter to data to prevent singular covariance matrices.
+
+    For dimensions with zero/near-zero variance (dead neurons),
+    adds small Gaussian noise proportional to the data range.
+    """
+    data = data.copy()
+    for i in range(data.shape[1]):
+        col_std = np.std(data[:, i])
+        if col_std < 1e-10:
+            # Dead neuron: add small noise based on data scale
+            data_range = np.max(np.abs(data[:, i])) + 1e-10
+            data[:, i] += np.random.normal(0, data_range * jitter_scale, size=data.shape[0])
+        else:
+            # Add tiny jitter proportional to std
+            data[:, i] += np.random.normal(0, col_std * jitter_scale, size=data.shape[0])
+    return data
+
+
+def check_dead_neurons(X):
+    """Check which neurons have zero variance (dead neurons)."""
+    if X.ndim == 1:
+        return np.std(X) < 1e-10
+    return np.std(X, axis=0) < 1e-10
+
+
 def compute_kde_entropy(data, n_samples=10000):
     """
     Compute entropy using KDE.
@@ -367,14 +394,18 @@ def compute_kde_entropy(data, n_samples=10000):
 
     Uses Monte Carlo estimation by sampling from the KDE.
     """
-    # Fit KDE
+    # Ensure 2D
     if data.ndim == 1:
-        data = data.reshape(1, -1)
-    else:
-        data = data.T  # KDE expects (n_features, n_samples)
+        data = data.reshape(-1, 1)
+
+    # Add jitter to handle singular covariance
+    data_jittered = add_jitter(data)
+
+    # KDE expects (n_features, n_samples)
+    data_T = data_jittered.T
 
     try:
-        kde = gaussian_kde(data)
+        kde = gaussian_kde(data_T)
 
         # Sample from KDE and estimate entropy
         samples = kde.resample(n_samples)
@@ -407,13 +438,25 @@ def compute_kde_mi(X, Y, n_samples=10000):
         X = X.reshape(-1, 1)
     Y = Y.reshape(-1, 1)
 
+    # Check for dead neurons and report
+    dead_mask = check_dead_neurons(X)
+    if np.any(dead_mask):
+        n_dead = np.sum(dead_mask)
+        # If ALL neurons in subset are dead, MI is 0 (no information)
+        if n_dead == X.shape[1]:
+            return 0.0
+
+    # Add jitter to handle singular covariance
+    X_jittered = add_jitter(X)
+    Y_jittered = add_jitter(Y)
+
     # Joint data
-    XY = np.hstack([X, Y])
+    XY = np.hstack([X_jittered, Y_jittered])
 
     try:
         # Fit KDEs
-        kde_x = gaussian_kde(X.T)
-        kde_y = gaussian_kde(Y.T)
+        kde_x = gaussian_kde(X_jittered.T)
+        kde_y = gaussian_kde(Y_jittered.T)
         kde_xy = gaussian_kde(XY.T)
 
         # Sample from joint distribution
