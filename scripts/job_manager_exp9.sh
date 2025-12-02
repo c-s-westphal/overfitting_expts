@@ -66,8 +66,8 @@ echo "Running exp9 Pruning & MI Analysis: seed=$seed"
 echo "Starting training..."
 python3.9 -u experiments/exp9_single_run.py \
     --seed "$seed" \
-    --n_layers 5 \
-    --neurons_per_layer 5 \
+    --n_layers 3 \
+    --neurons_per_layer 4 \
     --batch_size 128 \
     --device cuda \
     --output_dir results/exp9 \

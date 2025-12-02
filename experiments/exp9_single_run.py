@@ -521,10 +521,10 @@ def main():
     )
     parser.add_argument('--seed', type=int, required=True,
                         help='Random seed')
-    parser.add_argument('--n_layers', type=int, default=5,
-                        help='Number of hidden layers (default: 5)')
-    parser.add_argument('--neurons_per_layer', type=int, default=5,
-                        help='Neurons per hidden layer (default: 5)')
+    parser.add_argument('--n_layers', type=int, default=3,
+                        help='Number of hidden layers (default: 3)')
+    parser.add_argument('--neurons_per_layer', type=int, default=4,
+                        help='Neurons per hidden layer (default: 4)')
     parser.add_argument('--batch_size', type=int, default=128,
                         help='Batch size')
     parser.add_argument('--device', type=str, default='cuda',
