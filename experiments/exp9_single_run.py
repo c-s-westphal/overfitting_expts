@@ -20,7 +20,8 @@ import argparse
 import copy
 from itertools import combinations
 from tqdm import tqdm
-from scipy.stats import gaussian_kde
+from scipy.spatial import cKDTree
+from scipy.special import digamma
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -329,54 +330,42 @@ def compute_pruning_ratio(model, layer_idx, trainloader, device,
     return neurons_per_layer, 0.0
 
 
-def collect_activations_and_outputs(model, dataloader, device):
+def collect_activations_and_labels(model, dataloader, device):
     """
-    Collect all hidden layer activations and output probabilities on training set.
+    Collect all hidden layer activations and class labels on training set.
 
     Returns:
         activations: List of arrays, one per layer, shape (N, neurons_per_layer)
-        output_probs: Array of p(class=1), shape (N,)
+        labels: Array of class labels (0 or 1), shape (N,)
     """
     model.eval()
     all_activations = [[] for _ in range(model.n_layers)]
-    all_output_probs = []
+    all_labels = []
 
     with torch.no_grad():
         for inputs, labels in dataloader:
             inputs = inputs.to(device)
 
             output, acts = model.forward_with_activations(inputs)
-            probs = torch.softmax(output, dim=1)[:, 1]  # p(class=1)
 
             for i, act in enumerate(acts):
                 all_activations[i].append(act.cpu().numpy())
-            all_output_probs.append(probs.cpu().numpy())
+            all_labels.append(labels.numpy())
 
     # Concatenate
     activations = [np.concatenate(a, axis=0) for a in all_activations]
-    output_probs = np.concatenate(all_output_probs, axis=0)
+    labels = np.concatenate(all_labels, axis=0)
 
-    return activations, output_probs
+    return activations, labels
 
 
-def add_jitter(data, jitter_scale=1e-6):
+def add_jitter(data, jitter_scale=1e-10):
     """
-    Add small jitter to data to prevent singular covariance matrices.
-
-    For dimensions with zero/near-zero variance (dead neurons),
-    adds small Gaussian noise proportional to the data range.
+    Add small jitter to data to handle identical points.
     """
-    data = data.copy()
-    for i in range(data.shape[1]):
-        col_std = np.std(data[:, i])
-        if col_std < 1e-10:
-            # Dead neuron: add small noise based on data scale
-            data_range = np.max(np.abs(data[:, i])) + 1e-10
-            data[:, i] += np.random.normal(0, data_range * jitter_scale, size=data.shape[0])
-        else:
-            # Add tiny jitter proportional to std
-            data[:, i] += np.random.normal(0, col_std * jitter_scale, size=data.shape[0])
-    return data
+    data = data.copy().astype(np.float64)
+    noise = np.random.randn(*data.shape) * jitter_scale
+    return data + noise
 
 
 def check_dead_neurons(X):
@@ -386,110 +375,222 @@ def check_dead_neurons(X):
     return np.std(X, axis=0) < 1e-10
 
 
-def compute_kde_entropy(data, n_samples=10000):
+def compute_discrete_entropy(labels):
     """
-    Compute entropy using KDE.
+    Compute discrete entropy H(Y) for class labels in bits.
 
-    H(X) = -E[log p(X)]
-
-    Uses Monte Carlo estimation by sampling from the KDE.
-    """
-    # Ensure 2D
-    if data.ndim == 1:
-        data = data.reshape(-1, 1)
-
-    # Add jitter to handle singular covariance
-    data_jittered = add_jitter(data)
-
-    # KDE expects (n_features, n_samples)
-    data_T = data_jittered.T
-
-    try:
-        kde = gaussian_kde(data_T)
-
-        # Sample from KDE and estimate entropy
-        samples = kde.resample(n_samples)
-        log_probs = kde.logpdf(samples)
-
-        # Entropy = -E[log p(x)]
-        entropy = -np.mean(log_probs)
-        return entropy
-    except Exception as e:
-        print(f"    KDE entropy failed: {e}")
-        return np.nan
-
-
-def compute_kde_mi(X, Y, n_samples=10000):
-    """
-    Compute MI between X (neuron activations) and Y (output probability) using KDE.
-
-    MI(X; Y) = H(X) + H(Y) - H(X, Y)
+    H(Y) = -sum_y p(y) log2 p(y)
 
     Args:
-        X: Array of shape (N, d) - neuron activations for subset
-        Y: Array of shape (N,) - output probabilities
-        n_samples: Number of samples for Monte Carlo estimation
+        labels: Array of discrete class labels
 
     Returns:
-        Mutual information estimate
+        Entropy in bits
+    """
+    labels = np.asarray(labels)
+    _, counts = np.unique(labels, return_counts=True)
+    probs = counts / len(labels)
+    # Filter out zero probabilities to avoid log(0)
+    probs = probs[probs > 0]
+    entropy = -np.sum(probs * np.log2(probs))
+    return entropy
+
+
+def compute_ksg_mi(X, Y, k=5):
+    """
+    Compute MI using the KSG (Kraskov-Stögbauer-Grassberger) estimator.
+
+    Based on: Kraskov et al., "Estimating Mutual Information", PRE 2004.
+
+    Uses the first KSG estimator (Algorithm 1).
+
+    Args:
+        X: Array of shape (N, d_x) - continuous features
+        Y: Array of shape (N,) or (N, d_y) - continuous target
+        k: Number of nearest neighbors (default: 5)
+
+    Returns:
+        MI estimate in nats
     """
     # Ensure proper shapes
-    if X.ndim == 1:
-        X = X.reshape(-1, 1)
-    Y = Y.reshape(-1, 1)
+    X = np.atleast_2d(X)
+    if X.shape[0] == 1:
+        X = X.T
+    if Y.ndim == 1:
+        Y = Y.reshape(-1, 1)
 
-    # Check for dead neurons and report
+    n_samples = X.shape[0]
+    d_x = X.shape[1]
+    d_y = Y.shape[1]
+
+    # Check for dead neurons
     dead_mask = check_dead_neurons(X)
-    if np.any(dead_mask):
-        n_dead = np.sum(dead_mask)
-        # If ALL neurons in subset are dead, MI is 0 (no information)
-        if n_dead == X.shape[1]:
-            return 0.0
+    if np.all(dead_mask):
+        return 0.0
 
-    # Add jitter to handle singular covariance
-    X_jittered = add_jitter(X)
-    Y_jittered = add_jitter(Y)
+    # Add small jitter to avoid identical points
+    X = add_jitter(X)
+    Y = add_jitter(Y)
 
-    # Joint data
-    XY = np.hstack([X_jittered, Y_jittered])
+    # Normalize to unit variance for better distance computation
+    X_std = np.std(X, axis=0, keepdims=True)
+    X_std[X_std < 1e-10] = 1.0
+    X_norm = X / X_std
 
-    try:
-        # Fit KDEs
-        kde_x = gaussian_kde(X_jittered.T)
-        kde_y = gaussian_kde(Y_jittered.T)
-        kde_xy = gaussian_kde(XY.T)
+    Y_std = np.std(Y, axis=0, keepdims=True)
+    Y_std[Y_std < 1e-10] = 1.0
+    Y_norm = Y / Y_std
 
-        # Sample from joint distribution
-        samples_xy = kde_xy.resample(n_samples)
+    # Joint space
+    XY = np.hstack([X_norm, Y_norm])
 
-        # Compute log probabilities
-        log_p_xy = kde_xy.logpdf(samples_xy)
-        log_p_x = kde_x.logpdf(samples_xy[:X.shape[1], :])
-        log_p_y = kde_y.logpdf(samples_xy[X.shape[1]:, :])
+    # Build KD-trees
+    tree_xy = cKDTree(XY)
+    tree_x = cKDTree(X_norm)
+    tree_y = cKDTree(Y_norm)
 
-        # MI = E[log p(x,y) - log p(x) - log p(y)]
-        mi = np.mean(log_p_xy - log_p_x - log_p_y)
+    # For each point, find distance to k-th neighbor in joint space
+    # query k+1 because the point itself is included
+    distances_xy, _ = tree_xy.query(XY, k=k+1, p=np.inf)  # Chebyshev distance
+    eps = distances_xy[:, -1]  # k-th neighbor distance
 
-        return max(0, mi)  # MI should be non-negative
-    except Exception as e:
-        print(f"    KDE MI failed: {e}")
-        return np.nan
+    # Count points within eps in marginal spaces
+    n_x = np.zeros(n_samples)
+    n_y = np.zeros(n_samples)
+
+    for i in range(n_samples):
+        # Count points strictly within eps (not including boundary)
+        n_x[i] = len(tree_x.query_ball_point(X_norm[i], eps[i] - 1e-15, p=np.inf)) - 1
+        n_y[i] = len(tree_y.query_ball_point(Y_norm[i], eps[i] - 1e-15, p=np.inf)) - 1
+
+    # KSG estimator formula
+    # I(X;Y) = psi(k) + psi(N) - <psi(n_x + 1) + psi(n_y + 1)>
+    mi = digamma(k) + digamma(n_samples) - np.mean(digamma(n_x + 1) + digamma(n_y + 1))
+
+    return max(0.0, mi)  # MI is non-negative
 
 
-def compute_layer_mi_stats(activations, output_probs, neurons_per_layer=5):
+def compute_lnc_ksg_mi(X, Y, k=5, alpha=0.25):
+    """
+    Compute MI using LNC-KSG (Local Non-uniform Correction KSG) estimator.
+
+    Based on: Gao et al., "Demystifying Fixed k-Nearest Neighbor Information Estimators"
+
+    The LNC correction accounts for non-uniform density in local neighborhoods
+    using PCA-based volume correction.
+
+    Args:
+        X: Array of shape (N, d_x) - continuous features
+        Y: Array of shape (N,) or (N, d_y) - continuous target
+        k: Number of nearest neighbors (default: 5)
+        alpha: Fraction of neighbors to use for LNC (default: 0.25)
+
+    Returns:
+        MI estimate in nats
+    """
+    # Ensure proper shapes
+    X = np.atleast_2d(X)
+    if X.shape[0] == 1:
+        X = X.T
+    if Y.ndim == 1:
+        Y = Y.reshape(-1, 1)
+
+    n_samples = X.shape[0]
+    d_x = X.shape[1]
+    d_y = Y.shape[1]
+    d_xy = d_x + d_y
+
+    # Check for dead neurons
+    dead_mask = check_dead_neurons(X)
+    if np.all(dead_mask):
+        return 0.0
+
+    # Add small jitter
+    X = add_jitter(X)
+    Y = add_jitter(Y)
+
+    # Normalize to unit variance
+    X_std = np.std(X, axis=0, keepdims=True)
+    X_std[X_std < 1e-10] = 1.0
+    X_norm = X / X_std
+
+    Y_std = np.std(Y, axis=0, keepdims=True)
+    Y_std[Y_std < 1e-10] = 1.0
+    Y_norm = Y / Y_std
+
+    XY = np.hstack([X_norm, Y_norm])
+
+    # Build KD-trees
+    tree_xy = cKDTree(XY)
+    tree_x = cKDTree(X_norm)
+    tree_y = cKDTree(Y_norm)
+
+    # Number of neighbors for LNC
+    k_lnc = max(1, int(alpha * k))
+
+    # For each point, find k-th neighbor distance in joint space
+    distances_xy, indices_xy = tree_xy.query(XY, k=k+1, p=np.inf)
+    eps = distances_xy[:, -1]
+
+    # Count points in marginal spaces and compute LNC correction
+    n_x = np.zeros(n_samples)
+    n_y = np.zeros(n_samples)
+    lnc_correction = np.zeros(n_samples)
+
+    for i in range(n_samples):
+        # Points within eps in marginals
+        n_x[i] = len(tree_x.query_ball_point(X_norm[i], eps[i] - 1e-15, p=np.inf)) - 1
+        n_y[i] = len(tree_y.query_ball_point(Y_norm[i], eps[i] - 1e-15, p=np.inf)) - 1
+
+        # LNC correction: estimate local dimensionality using PCA
+        if k_lnc >= d_xy:
+            neighbor_indices = indices_xy[i, 1:k+1]  # Exclude self
+            local_points = XY[neighbor_indices] - XY[i]
+
+            try:
+                # SVD to estimate local dimensionality
+                _, s, _ = np.linalg.svd(local_points, full_matrices=False)
+                # Ratio of explained variance
+                var_ratio = s ** 2 / (np.sum(s ** 2) + 1e-15)
+                # Effective dimensionality (number of significant components)
+                eff_dim = np.sum(var_ratio > 0.01)
+                # Correction based on difference from full dimensionality
+                lnc_correction[i] = (d_xy - eff_dim) * np.log(2) / d_xy
+            except:
+                lnc_correction[i] = 0.0
+
+    # KSG with LNC correction
+    mi = (digamma(k) + digamma(n_samples)
+          - np.mean(digamma(n_x + 1) + digamma(n_y + 1))
+          + np.mean(lnc_correction))
+
+    # Convert from nats to bits
+    mi_bits = mi / np.log(2)
+
+    return max(0.0, mi_bits)
+
+
+def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     """
     Compute MI statistics for all subsets of neurons in a layer.
 
-    Computes MI for all subsets of size 1 to neurons_per_layer-1 (30 subsets for 5 neurons).
+    Uses LNC-KSG estimator for MI (in bits) and discrete entropy for H(Y).
+
+    Args:
+        activations: Array of shape (N, neurons_per_layer) - layer activations
+        labels: Array of shape (N,) - discrete class labels (0 or 1)
+        neurons_per_layer: Number of neurons in the layer
+        k: Number of neighbors for KSG estimator
 
     Returns:
-        avg_mi: Average MI across all subsets
+        avg_mi: Average MI across all subsets (in bits)
         all_mi: Dict mapping subset tuple to MI value
-        output_entropy: Entropy of output probability
+        output_entropy: Discrete entropy H(Y) in bits
+        gamma: H(Y) / avg_mi (attenuation factor)
     """
-    # Compute output entropy once
-    output_entropy = compute_kde_entropy(output_probs)
-    print(f"    Output entropy: {output_entropy:.4f}")
+    # Compute discrete output entropy H(Y) in bits
+    output_entropy = compute_discrete_entropy(labels)
+    print(f"    Output entropy H(Y): {output_entropy:.4f} bits")
 
     all_mi = {}
     mi_values = []
@@ -497,22 +598,29 @@ def compute_layer_mi_stats(activations, output_probs, neurons_per_layer=5):
     # Generate all subsets of size 1 to neurons_per_layer-1
     neuron_indices = list(range(neurons_per_layer))
 
-    for subset_size in range(1, neurons_per_layer):  # 1, 2, 3, 4
+    for subset_size in range(1, neurons_per_layer):  # 1, 2, 3
         for subset in combinations(neuron_indices, subset_size):
             # Extract activations for this subset
             subset_activations = activations[:, list(subset)]
 
-            # Compute MI
-            mi = compute_kde_mi(subset_activations, output_probs)
+            # Compute MI using LNC-KSG (returns bits)
+            mi = compute_lnc_ksg_mi(subset_activations, labels.reshape(-1, 1), k=k)
             all_mi[subset] = mi
             mi_values.append(mi)
 
-            print(f"    Subset {subset}: MI = {mi:.4f}")
+            print(f"    Subset {subset}: MI = {mi:.4f} bits")
 
     avg_mi = np.nanmean(mi_values)
-    print(f"    Average MI across all subsets: {avg_mi:.4f}")
+    print(f"    Average MI across all subsets: {avg_mi:.4f} bits")
 
-    return avg_mi, all_mi, output_entropy
+    # Compute gamma = H(Y) / avg_MI
+    if avg_mi > 1e-10:
+        gamma = output_entropy / avg_mi
+    else:
+        gamma = np.inf
+    print(f"    Gamma (H(Y) / avg_MI): {gamma:.4f}")
+
+    return avg_mi, all_mi, output_entropy, gamma
 
 
 def main():
@@ -593,13 +701,14 @@ def main():
     original_train_acc = train_metrics['train_acc']
     print(f"\nTraining complete. Train acc: {original_train_acc:.2f}%, Test acc: {train_metrics['test_acc']:.2f}%")
 
-    # Collect activations and output probabilities
+    # Collect activations and class labels
     print(f"\n{'='*80}")
-    print("Collecting activations and output probabilities...")
+    print("Collecting activations and class labels...")
     print(f"{'='*80}")
 
-    activations, output_probs = collect_activations_and_outputs(model, trainloader, args.device)
-    print(f"Collected {len(output_probs)} samples")
+    activations, labels = collect_activations_and_labels(model, trainloader, args.device)
+    print(f"Collected {len(labels)} samples")
+    print(f"Class distribution: {np.bincount(labels)}")
     for i, act in enumerate(activations):
         print(f"  Layer {i+1}: shape {act.shape}")
 
@@ -616,12 +725,13 @@ def main():
 
     # Per-layer analysis
     print(f"\n{'='*80}")
-    print("Per-layer Analysis: Pruning Ratio and MI")
+    print("Per-layer Analysis: Pruning Ratio and MI (using LNC-KSG)")
     print(f"{'='*80}")
 
     layer_pruning_ratios = []
     layer_avg_mis = []
     layer_entropies = []
+    layer_gammas = []
 
     for layer_idx in range(args.n_layers):
         print(f"\n--- Layer {layer_idx + 1} ---")
@@ -635,13 +745,14 @@ def main():
         )
         layer_pruning_ratios.append(pruning_ratio)
 
-        # Compute MI statistics
+        # Compute MI statistics using LNC-KSG
         print(f"\n  Computing MI for layer {layer_idx + 1}...")
-        avg_mi, all_mi, output_entropy = compute_layer_mi_stats(
-            activations[layer_idx], output_probs, args.neurons_per_layer
+        avg_mi, all_mi, output_entropy, gamma = compute_layer_mi_stats(
+            activations[layer_idx], labels, args.neurons_per_layer
         )
         layer_avg_mis.append(avg_mi)
         layer_entropies.append(output_entropy)
+        layer_gammas.append(gamma)
 
         # Store layer results
         results['layer_results'][layer_idx] = {
@@ -649,6 +760,7 @@ def main():
             'pruning_ratio': pruning_ratio,
             'avg_mi': avg_mi,
             'output_entropy': output_entropy,
+            'gamma': gamma,
             'all_mi': {str(k): v for k, v in all_mi.items()}  # Convert tuple keys to strings
         }
 
@@ -656,15 +768,17 @@ def main():
     results['layer_pruning_ratios'] = np.array(layer_pruning_ratios)
     results['layer_avg_mis'] = np.array(layer_avg_mis)
     results['layer_entropies'] = np.array(layer_entropies)
+    results['layer_gammas'] = np.array(layer_gammas)
 
     # Print summary
     print(f"\n{'='*80}")
-    print("Summary")
+    print("Summary (MI in bits, H(Y) discrete)")
     print(f"{'='*80}")
-    print(f"{'Layer':<10} {'Pruning Ratio':<15} {'Avg MI':<15} {'Entropy':<15}")
-    print("-" * 55)
+    print(f"{'Layer':<8} {'Prune Ratio':<12} {'Avg MI':<12} {'H(Y)':<12} {'Gamma':<12} {'q':<8}")
+    print("-" * 64)
     for i in range(args.n_layers):
-        print(f"{i+1:<10} {layer_pruning_ratios[i]:<15.4f} {layer_avg_mis[i]:<15.4f} {layer_entropies[i]:<15.4f}")
+        q = int((1 - layer_pruning_ratios[i]) * args.neurons_per_layer)
+        print(f"{i+1:<8} {layer_pruning_ratios[i]:<12.4f} {layer_avg_mis[i]:<12.4f} {layer_entropies[i]:<12.4f} {layer_gammas[i]:<12.4f} {q:<8}")
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
@@ -681,6 +795,7 @@ def main():
         'layer_pruning_ratios': results['layer_pruning_ratios'],
         'layer_avg_mis': results['layer_avg_mis'],
         'layer_entropies': results['layer_entropies'],
+        'layer_gammas': results['layer_gammas'],
     }
 
     # Add per-layer details
@@ -689,6 +804,7 @@ def main():
         flat_results[f'layer{layer_idx}_pruning_ratio'] = layer_data['pruning_ratio']
         flat_results[f'layer{layer_idx}_avg_mi'] = layer_data['avg_mi']
         flat_results[f'layer{layer_idx}_output_entropy'] = layer_data['output_entropy']
+        flat_results[f'layer{layer_idx}_gamma'] = layer_data['gamma']
 
     np.savez(save_path, **flat_results)
     print(f"\nResults saved to: {save_path}")
