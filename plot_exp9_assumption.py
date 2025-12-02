@@ -167,7 +167,7 @@ def plot_assumption_validity(df, output_path=None):
              transform=plt.gca().transAxes, fontsize=11, verticalalignment='top',
              bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-    plt.xlabel(r"$q_j$ (min subset size with MI $\geq$ MI(full) at layer j)", fontsize=12)
+    plt.xlabel(r"$q_j$ (min subset size with avg MI $\geq$ MI(full) at layer j)", fontsize=12)
     plt.ylabel(r"$\gamma_i$ (H(Y) / avg MI at layer i)", fontsize=12)
     plt.title(f"Layerwise Pruning Assumption Validity - {dataset_label}\n" +
               r"$\sum_{r=q_j}^{n_j} \binom{n_j}{r} \geq \frac{2^{n_j}-2}{\gamma_i}$", fontsize=12)

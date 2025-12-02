@@ -586,9 +586,9 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
 
     Uses LNC-KSG estimator for MI (in bits) and discrete entropy for H(Y).
 
-    q is defined as the smallest subset size r such that ALL subsets of size r
-    have MI >= MI(full set). This represents the minimum number of neurons needed
-    to achieve the same information as the full layer.
+    q is defined as the smallest subset size r such that the AVERAGE MI of all
+    subsets of size r is >= MI(full set). This represents the minimum number of
+    neurons needed (on average) to achieve the same information as the full layer.
 
     Args:
         activations: Array of shape (N, neurons_per_layer) - layer activations
@@ -601,7 +601,7 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
         all_mi: Dict mapping subset tuple to MI value
         output_entropy: Discrete entropy H(Y) in bits
         gamma: H(Y) / avg_mi (attenuation factor)
-        q: Smallest subset size where all subsets have MI >= MI(full set)
+        q: Smallest subset size where avg MI of subsets >= MI(full set)
         pruning_ratio: (n - q) / n
         neuron_mis: List of individual neuron MIs
         full_mi: MI of the full neuron set
@@ -646,17 +646,19 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     avg_mi = np.nanmean(mi_values)
     print(f"    Average MI across all subsets: {avg_mi:.4f} bits")
 
-    # Compute q = smallest subset size r where ALL subsets of size r have MI >= full_mi
+    # Compute q = smallest subset size r where AVERAGE MI of subsets of size r >= full_mi
     q = neurons_per_layer  # Default to full set if no smaller size qualifies
     for r in range(1, neurons_per_layer):
         subset_mis = mi_by_size[r]
-        if len(subset_mis) > 0 and all(mi >= full_mi for mi in subset_mis):
-            q = r
-            print(f"    q = {q}: all subsets of size {r} have MI >= full set MI ({full_mi:.4f})")
-            break
+        if len(subset_mis) > 0:
+            avg_mi_at_r = np.mean(subset_mis)
+            if avg_mi_at_r >= full_mi:
+                q = r
+                print(f"    q = {q}: avg MI of size-{r} subsets ({avg_mi_at_r:.4f}) >= full set MI ({full_mi:.4f})")
+                break
     else:
         q = neurons_per_layer
-        print(f"    q = {q}: only full set achieves MI >= full set MI")
+        print(f"    q = {q}: only full set achieves avg MI >= full set MI")
 
     pruning_ratio = (neurons_per_layer - q) / neurons_per_layer
     print(f"    q = {q}, Pruning ratio: {pruning_ratio:.4f}")
