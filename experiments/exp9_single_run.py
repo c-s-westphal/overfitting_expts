@@ -1,12 +1,12 @@
 """
-Experiment 9: MI-based pruning analysis for MNIST classification.
+Experiment 9: Retraining-based pruning analysis for MNIST classification.
 
 This experiment:
-1. Trains a small MLP on MNIST (binary or full) with progressive per-layer dropout
-   (layer 1: 0, layer 2: 0.1, layer 3: 0.2, etc.)
+1. Trains a small MLP on MNIST (binary, 5-class, or full) with progressive per-layer dropout
+   (layer 1: 0, layer 2: dropout_base, layer 3: 2*dropout_base, etc.)
 2. For each layer, computes:
    - MI between all neuron subsets and output (class labels) using LNC-KSG
-   - q = smallest subset size r where ALL subsets of size r have MI >= MI(full set)
+   - q = minimum neurons needed to recover train accuracy after retraining downstream layers
    - Pruning ratio = (n - q) / n
    - Discrete entropy H(Y) and gamma = H(Y) / avg_MI
 3. Stores per-layer: q, pruning_ratio, neuron_mis, avg_mi, full_mi, H(Y), gamma
@@ -199,7 +199,7 @@ def get_layer_neuron_weights(model, layer_idx):
     return weight_norms
 
 
-def create_pruned_model(original_model, layer_idx, keep_neurons, device):
+def create_pruned_model(original_model, layer_idx, keep_neurons, device, num_classes=2):
     """
     Create a new model with a pruned layer.
 
@@ -212,6 +212,7 @@ def create_pruned_model(original_model, layer_idx, keep_neurons, device):
         layer_idx: Which layer to prune (0-indexed)
         keep_neurons: List of neuron indices to keep
         device: Device to use
+        num_classes: Number of output classes
 
     Returns:
         New model with modified architecture
@@ -250,7 +251,7 @@ def create_pruned_model(original_model, layer_idx, keep_neurons, device):
 
             # Output layer
             out_in_dim = n_keep if layer_idx == n_layers - 1 else neurons_per_layer
-            self.output_layer = nn.Linear(out_in_dim, 2)
+            self.output_layer = nn.Linear(out_in_dim, num_classes)
 
         def forward(self, x):
             x = x.view(x.size(0), -1)
@@ -284,7 +285,7 @@ def create_pruned_model(original_model, layer_idx, keep_neurons, device):
 
 
 def compute_pruning_ratio(model, layer_idx, trainloader, device,
-                          target_train_acc, retrain_epochs=10, lr=0.001):
+                          target_train_acc, num_classes=2, retrain_epochs=10, lr=0.001):
     """
     Compute the minimum number of neurons needed to recover train accuracy.
 
@@ -294,8 +295,8 @@ def compute_pruning_ratio(model, layer_idx, trainloader, device,
     3. If fails, try 2, 3, ... until success
 
     Returns:
-        min_neurons: Minimum neurons needed
-        pruning_ratio: (5 - min_neurons) / 5 = fraction that can be pruned
+        min_neurons: Minimum neurons needed (this is q)
+        pruning_ratio: (n - min_neurons) / n = fraction that can be pruned
     """
     neurons_per_layer = model.neurons_per_layer
 
@@ -303,13 +304,13 @@ def compute_pruning_ratio(model, layer_idx, trainloader, device,
     importance = get_layer_neuron_weights(model, layer_idx)
     sorted_indices = np.argsort(importance)[::-1]  # Descending order
 
-    print(f"\n  Testing layer {layer_idx + 1} pruning...")
+    print(f"\n  Testing layer {layer_idx + 1} pruning (retraining-based)...")
 
     for n_keep in range(1, neurons_per_layer + 1):
         keep_neurons = sorted_indices[:n_keep].tolist()
 
         # Create pruned model
-        pruned_model = create_pruned_model(model, layer_idx, keep_neurons, device)
+        pruned_model = create_pruned_model(model, layer_idx, keep_neurons, device, num_classes)
 
         # Retrain layers after the pruned layer
         criterion = nn.CrossEntropyLoss()
@@ -585,14 +586,11 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     Compute MI statistics for all subsets of neurons in a layer.
 
     Uses LNC-KSG estimator for MI (in bits) and discrete entropy for H(Y).
-
-    q is defined as the smallest subset size r such that the AVERAGE MI of all
-    subsets of size r is >= MI(full set). This represents the minimum number of
-    neurons needed (on average) to achieve the same information as the full layer.
+    Note: q is computed separately via retraining-based pruning.
 
     Args:
         activations: Array of shape (N, neurons_per_layer) - layer activations
-        labels: Array of shape (N,) - discrete class labels (0 or 1)
+        labels: Array of shape (N,) - discrete class labels
         neurons_per_layer: Number of neurons in the layer
         k: Number of neighbors for KSG estimator
 
@@ -601,8 +599,6 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
         all_mi: Dict mapping subset tuple to MI value
         output_entropy: Discrete entropy H(Y) in bits
         gamma: H(Y) / avg_mi (attenuation factor)
-        q: Smallest subset size where avg MI of subsets >= MI(full set)
-        pruning_ratio: (n - q) / n
         neuron_mis: List of individual neuron MIs
         full_mi: MI of the full neuron set
     """
@@ -610,7 +606,7 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     output_entropy = compute_discrete_entropy(labels)
     print(f"    Output entropy H(Y): {output_entropy:.4f} bits")
 
-    # First compute MI for the full set (this is our threshold)
+    # First compute MI for the full set
     neuron_indices = list(range(neurons_per_layer))
     full_subset = tuple(neuron_indices)
     full_mi = compute_lnc_ksg_mi(activations, labels.reshape(-1, 1), k=k)
@@ -619,10 +615,6 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     all_mi = {full_subset: full_mi}
     mi_values = []
     neuron_mis = []  # MI for individual neurons (subsets of size 1)
-
-    # Store MIs grouped by subset size for q calculation
-    mi_by_size = {r: [] for r in range(1, neurons_per_layer + 1)}
-    mi_by_size[neurons_per_layer] = [full_mi]  # Full set
 
     # Generate all subsets of size 1 to neurons_per_layer-1
     for subset_size in range(1, neurons_per_layer):  # 1, 2, 3, 4
@@ -634,7 +626,6 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
             mi = compute_lnc_ksg_mi(subset_activations, labels.reshape(-1, 1), k=k)
             all_mi[subset] = mi
             mi_values.append(mi)
-            mi_by_size[subset_size].append(mi)
 
             # Track individual neuron MIs
             if subset_size == 1:
@@ -646,23 +637,6 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     avg_mi = np.nanmean(mi_values)
     print(f"    Average MI across all subsets: {avg_mi:.4f} bits")
 
-    # Compute q = smallest subset size r where AVERAGE MI of subsets of size r >= full_mi
-    q = neurons_per_layer  # Default to full set if no smaller size qualifies
-    for r in range(1, neurons_per_layer):
-        subset_mis = mi_by_size[r]
-        if len(subset_mis) > 0:
-            avg_mi_at_r = np.mean(subset_mis)
-            if avg_mi_at_r >= full_mi:
-                q = r
-                print(f"    q = {q}: avg MI of size-{r} subsets ({avg_mi_at_r:.4f}) >= full set MI ({full_mi:.4f})")
-                break
-    else:
-        q = neurons_per_layer
-        print(f"    q = {q}: only full set achieves avg MI >= full set MI")
-
-    pruning_ratio = (neurons_per_layer - q) / neurons_per_layer
-    print(f"    q = {q}, Pruning ratio: {pruning_ratio:.4f}")
-
     # Compute gamma = H(Y) / avg_MI
     if avg_mi > 1e-10:
         gamma = output_entropy / avg_mi
@@ -671,7 +645,7 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     print(f"    Gamma (H(Y) / avg_MI): {gamma:.4f}")
 
     neuron_mis = np.array(neuron_mis)
-    return avg_mi, all_mi, output_entropy, gamma, q, pruning_ratio, neuron_mis, full_mi
+    return avg_mi, all_mi, output_entropy, gamma, neuron_mis, full_mi
 
 
 def main():
@@ -810,7 +784,7 @@ def main():
 
     # Per-layer analysis
     print(f"\n{'='*80}")
-    print("Per-layer Analysis: MI-based Pruning and Statistics (using LNC-KSG)")
+    print("Per-layer Analysis: Retraining-based Pruning + MI Statistics (LNC-KSG)")
     print(f"{'='*80}")
 
     layer_pruning_ratios = []
@@ -824,17 +798,28 @@ def main():
         print(f"\n--- Layer {layer_idx + 1} ---")
 
         # Compute MI statistics using LNC-KSG
-        # q = smallest subset size where all subsets have MI >= full set MI
-        # pruning_ratio = (n - q) / n
-        avg_mi, all_mi, output_entropy, gamma, q, pruning_ratio, neuron_mis, full_mi = compute_layer_mi_stats(
+        avg_mi, all_mi, output_entropy, gamma, neuron_mis, full_mi = compute_layer_mi_stats(
             activations[layer_idx], labels, args.neurons_per_layer
         )
+
+        # Compute q via retraining-based pruning
+        # q = minimum neurons needed to recover train accuracy after retraining downstream
+        q, pruning_ratio = compute_pruning_ratio(
+            model, layer_idx, trainloader, args.device,
+            target_train_acc=original_train_acc,
+            num_classes=num_classes,
+            retrain_epochs=10,
+            lr=args.lr
+        )
+
         layer_avg_mis.append(avg_mi)
         layer_entropies.append(output_entropy)
         layer_gammas.append(gamma)
         layer_qs.append(q)
         layer_pruning_ratios.append(pruning_ratio)
         layer_neuron_mis.append(neuron_mis)
+
+        print(f"    Retraining-based q = {q}, Pruning ratio = {pruning_ratio:.4f}")
 
         # Store layer results
         results['layer_results'][layer_idx] = {
@@ -866,7 +851,7 @@ def main():
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
-    save_path = f"{args.output_dir}/exp9_{args.dataset}_seed{args.seed}_results.npz"
+    save_path = f"{args.output_dir}/exp9_{args.dataset}_L{args.n_layers}_N{args.neurons_per_layer}_D{args.dropout_base}_seed{args.seed}.npz"
 
     # Flatten layer_results for npz saving
     flat_results = {

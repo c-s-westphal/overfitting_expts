@@ -6,8 +6,8 @@
 #$ -cwd
 #$ -S /bin/bash
 #$ -j y
-#$ -N exp9_pruning_mi
-#$ -t 1-5
+#$ -N exp9_pruning_retrain
+#$ -t 1-40
 set -euo pipefail
 
 hostname
@@ -49,16 +49,18 @@ mkdir -p data
 # 4.  Extract task-specific parameters
 # ---------------------------------------------------------------------
 # Format per line in jobs_exp9.txt:
-#   <seed>
+#   <seed> <n_layers> <dropout_base>
 seed=$(sed -n ${number}p "$paramfile" | awk '{print $1}')
+n_layers=$(sed -n ${number}p "$paramfile" | awk '{print $2}')
+dropout_base=$(sed -n ${number}p "$paramfile" | awk '{print $3}')
 
-if [[ -z "$seed" ]]; then
+if [[ -z "$seed" || -z "$n_layers" || -z "$dropout_base" ]]; then
   echo "Invalid job line at index $number in $paramfile" >&2
   exit 1
 fi
 
 date
-echo "Running exp9 MI-based Pruning Analysis: seed=$seed"
+echo "Running exp9 Retraining-based Pruning: seed=$seed n_layers=$n_layers dropout_base=$dropout_base"
 
 # ---------------------------------------------------------------------
 # 5.  Run single experiment
@@ -66,15 +68,15 @@ echo "Running exp9 MI-based Pruning Analysis: seed=$seed"
 echo "Starting training..."
 python3.9 -u experiments/exp9_single_run.py \
     --seed "$seed" \
-    --dataset mnist_5class \
-    --n_layers 10 \
-    --neurons_per_layer 5 \
+    --dataset mnist_full \
+    --n_layers "$n_layers" \
+    --neurons_per_layer 4 \
     --batch_size 128 \
     --device cuda \
     --output_dir results/exp9 \
     --max_epochs 200 \
     --lr 0.001 \
-    --dropout_base 0.1
+    --dropout_base "$dropout_base"
 
 date
-echo "Training completed: exp9 seed=$seed"
+echo "Training completed: exp9 seed=$seed n_layers=$n_layers dropout_base=$dropout_base"
