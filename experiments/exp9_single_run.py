@@ -4,10 +4,9 @@ Experiment 9: MI-based pruning analysis for binary MNIST classification.
 This experiment:
 1. Trains a small MLP on MNIST binary (0 vs 1) with dropout before output layer
 2. For each layer, computes:
-   - MI between individual neurons and output (class labels) using LNC-KSG
-   - q = number of neurons with MI > 0 (neurons that cannot be pruned)
-   - Pruning ratio = (n - q) / n (fraction of neurons with MI = 0)
-   - MI between all neuron subsets and output
+   - MI between all neuron subsets and output (class labels) using LNC-KSG
+   - q = smallest subset size r where ALL subsets of size r have MI >= H(Y)
+   - Pruning ratio = (n - q) / n
    - Discrete entropy H(Y) and gamma = H(Y) / avg_MI
 3. Stores per-layer: q, pruning_ratio, neuron_mis, avg_mi, H(Y), gamma
 """
@@ -577,27 +576,29 @@ def compute_lnc_ksg_mi(X, Y, k=5, alpha=0.25):
     return max(0.0, mi_bits)
 
 
-def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5, mi_threshold=1e-6):
+def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     """
     Compute MI statistics for all subsets of neurons in a layer.
 
     Uses LNC-KSG estimator for MI (in bits) and discrete entropy for H(Y).
-    Also computes q (number of neurons with MI > 0) and pruning ratio.
+
+    q is defined as the smallest subset size r such that ALL subsets of size r
+    have MI >= H(Y). This represents the minimum number of neurons needed to
+    fully capture the output information.
 
     Args:
         activations: Array of shape (N, neurons_per_layer) - layer activations
         labels: Array of shape (N,) - discrete class labels (0 or 1)
         neurons_per_layer: Number of neurons in the layer
         k: Number of neighbors for KSG estimator
-        mi_threshold: Threshold below which MI is considered 0
 
     Returns:
         avg_mi: Average MI across all subsets (in bits)
         all_mi: Dict mapping subset tuple to MI value
         output_entropy: Discrete entropy H(Y) in bits
         gamma: H(Y) / avg_mi (attenuation factor)
-        q: Number of neurons with MI > 0 (neurons to keep)
-        pruning_ratio: Fraction of neurons that can be pruned (MI = 0)
+        q: Smallest subset size where all subsets have MI >= H(Y)
+        pruning_ratio: (n - q) / n
         neuron_mis: List of individual neuron MIs
     """
     # Compute discrete output entropy H(Y) in bits
@@ -607,6 +608,9 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5, mi_thr
     all_mi = {}
     mi_values = []
     neuron_mis = []  # MI for individual neurons (subsets of size 1)
+
+    # Store MIs grouped by subset size for q calculation
+    mi_by_size = {r: [] for r in range(1, neurons_per_layer + 1)}
 
     # Generate all subsets of size 1 to neurons_per_layer-1
     neuron_indices = list(range(neurons_per_layer))
@@ -620,6 +624,7 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5, mi_thr
             mi = compute_lnc_ksg_mi(subset_activations, labels.reshape(-1, 1), k=k)
             all_mi[subset] = mi
             mi_values.append(mi)
+            mi_by_size[subset_size].append(mi)
 
             # Track individual neuron MIs
             if subset_size == 1:
@@ -631,13 +636,28 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5, mi_thr
     avg_mi = np.nanmean(mi_values)
     print(f"    Average MI across all subsets: {avg_mi:.4f} bits")
 
-    # Compute q = number of neurons with MI > threshold
-    neuron_mis = np.array(neuron_mis)
-    q = int(np.sum(neuron_mis > mi_threshold))
-    pruning_ratio = (neurons_per_layer - q) / neurons_per_layer
+    # Compute q = smallest subset size r where ALL subsets of size r have MI >= H(Y)
+    q = neurons_per_layer  # Default to full set if no smaller size qualifies
+    for r in range(1, neurons_per_layer):
+        subset_mis = mi_by_size[r]
+        if len(subset_mis) > 0 and all(mi >= output_entropy for mi in subset_mis):
+            q = r
+            print(f"    q = {q}: all subsets of size {r} have MI >= H(Y)")
+            break
+    else:
+        # Check if full set (size n) qualifies - compute MI for full set
+        full_subset = tuple(neuron_indices)
+        full_mi = compute_lnc_ksg_mi(activations, labels.reshape(-1, 1), k=k)
+        all_mi[full_subset] = full_mi
+        print(f"    Full set {full_subset}: MI = {full_mi:.4f} bits")
+        if full_mi >= output_entropy:
+            q = neurons_per_layer
+            print(f"    q = {q}: full set has MI >= H(Y)")
+        else:
+            print(f"    Warning: even full set has MI < H(Y)")
 
-    print(f"    Neurons with MI > 0: {q}/{neurons_per_layer}")
-    print(f"    Pruning ratio: {pruning_ratio:.4f}")
+    pruning_ratio = (neurons_per_layer - q) / neurons_per_layer
+    print(f"    q = {q}, Pruning ratio: {pruning_ratio:.4f}")
 
     # Compute gamma = H(Y) / avg_MI
     if avg_mi > 1e-10:
@@ -646,6 +666,7 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5, mi_thr
         gamma = np.inf
     print(f"    Gamma (H(Y) / avg_MI): {gamma:.4f}")
 
+    neuron_mis = np.array(neuron_mis)
     return avg_mi, all_mi, output_entropy, gamma, q, pruning_ratio, neuron_mis
 
 
