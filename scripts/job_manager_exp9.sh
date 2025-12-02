@@ -58,7 +58,7 @@ if [[ -z "$seed" ]]; then
 fi
 
 date
-echo "Running exp9 Pruning & MI Analysis: seed=$seed"
+echo "Running exp9 MI-based Pruning Analysis: seed=$seed"
 
 # ---------------------------------------------------------------------
 # 5.  Run single experiment
@@ -72,8 +72,8 @@ python3.9 -u experiments/exp9_single_run.py \
     --device cuda \
     --output_dir results/exp9 \
     --max_epochs 200 \
-    --retrain_epochs 10 \
-    --lr 0.001
+    --lr 0.001 \
+    --dropout 0.5
 
 date
 echo "Training completed: exp9 seed=$seed"

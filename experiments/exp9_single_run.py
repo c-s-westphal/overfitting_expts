@@ -1,14 +1,15 @@
 """
-Experiment 9: Pruning ratio and MI analysis for binary MNIST classification.
+Experiment 9: MI-based pruning analysis for binary MNIST classification.
 
 This experiment:
-1. Trains a small MLP (5 hidden layers, 5 neurons each) on MNIST binary (0 vs 1)
+1. Trains a small MLP on MNIST binary (0 vs 1) with dropout before output layer
 2. For each layer, computes:
-   - Allowed pruning ratio: min neurons needed to recover train accuracy
-     (freeze layer & earlier layers, retrain later layers)
-   - MI between all neuron subsets (sizes 1-4) and output probability using KDE
-   - Entropy of output probability
-3. Stores per-layer: entropy, average MI across subsets, allowed pruning ratio
+   - MI between individual neurons and output (class labels) using LNC-KSG
+   - q = number of neurons with MI > 0 (neurons that cannot be pruned)
+   - Pruning ratio = (n - q) / n (fraction of neurons with MI = 0)
+   - MI between all neuron subsets and output
+   - Discrete entropy H(Y) and gamma = H(Y) / avg_MI
+3. Stores per-layer: q, pruning_ratio, neuron_mis, avg_mi, H(Y), gamma
 """
 import torch
 import torch.nn as nn
@@ -34,10 +35,11 @@ class MLP_Binary(nn.Module):
 
     Architecture:
     - Input: 784 (28x28 flattened)
-    - 5 hidden layers with 5 neurons each
+    - N hidden layers with M neurons each
+    - Dropout before output layer
     - Output: 2 classes (digits 0 and 1)
     """
-    def __init__(self, n_layers=5, neurons_per_layer=5, num_classes=2):
+    def __init__(self, n_layers=5, neurons_per_layer=5, num_classes=2, dropout=0.5):
         super(MLP_Binary, self).__init__()
 
         self.n_layers = n_layers
@@ -57,6 +59,9 @@ class MLP_Binary(nn.Module):
             self.hidden_layers.append(nn.Linear(neurons_per_layer, neurons_per_layer))
             self.activations.append(nn.ReLU())
 
+        # Dropout before output layer
+        self.dropout = nn.Dropout(p=dropout)
+
         # Output layer
         self.output_layer = nn.Linear(neurons_per_layer, num_classes)
 
@@ -73,6 +78,7 @@ class MLP_Binary(nn.Module):
         x = x.view(x.size(0), -1)
         for layer, act in zip(self.hidden_layers, self.activations):
             x = act(layer(x))
+        x = self.dropout(x)
         return self.output_layer(x)
 
     def forward_with_activations(self, x):
@@ -82,6 +88,7 @@ class MLP_Binary(nn.Module):
         for layer, act in zip(self.hidden_layers, self.activations):
             x = act(layer(x))
             activations.append(x)
+        x = self.dropout(x)
         output = self.output_layer(x)
         return output, activations
 
@@ -570,23 +577,28 @@ def compute_lnc_ksg_mi(X, Y, k=5, alpha=0.25):
     return max(0.0, mi_bits)
 
 
-def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
+def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5, mi_threshold=1e-6):
     """
     Compute MI statistics for all subsets of neurons in a layer.
 
     Uses LNC-KSG estimator for MI (in bits) and discrete entropy for H(Y).
+    Also computes q (number of neurons with MI > 0) and pruning ratio.
 
     Args:
         activations: Array of shape (N, neurons_per_layer) - layer activations
         labels: Array of shape (N,) - discrete class labels (0 or 1)
         neurons_per_layer: Number of neurons in the layer
         k: Number of neighbors for KSG estimator
+        mi_threshold: Threshold below which MI is considered 0
 
     Returns:
         avg_mi: Average MI across all subsets (in bits)
         all_mi: Dict mapping subset tuple to MI value
         output_entropy: Discrete entropy H(Y) in bits
         gamma: H(Y) / avg_mi (attenuation factor)
+        q: Number of neurons with MI > 0 (neurons to keep)
+        pruning_ratio: Fraction of neurons that can be pruned (MI = 0)
+        neuron_mis: List of individual neuron MIs
     """
     # Compute discrete output entropy H(Y) in bits
     output_entropy = compute_discrete_entropy(labels)
@@ -594,6 +606,7 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
 
     all_mi = {}
     mi_values = []
+    neuron_mis = []  # MI for individual neurons (subsets of size 1)
 
     # Generate all subsets of size 1 to neurons_per_layer-1
     neuron_indices = list(range(neurons_per_layer))
@@ -608,10 +621,23 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
             all_mi[subset] = mi
             mi_values.append(mi)
 
-            print(f"    Subset {subset}: MI = {mi:.4f} bits")
+            # Track individual neuron MIs
+            if subset_size == 1:
+                neuron_mis.append(mi)
+                print(f"    Neuron {subset[0]}: MI = {mi:.4f} bits")
+            else:
+                print(f"    Subset {subset}: MI = {mi:.4f} bits")
 
     avg_mi = np.nanmean(mi_values)
     print(f"    Average MI across all subsets: {avg_mi:.4f} bits")
+
+    # Compute q = number of neurons with MI > threshold
+    neuron_mis = np.array(neuron_mis)
+    q = int(np.sum(neuron_mis > mi_threshold))
+    pruning_ratio = (neurons_per_layer - q) / neurons_per_layer
+
+    print(f"    Neurons with MI > 0: {q}/{neurons_per_layer}")
+    print(f"    Pruning ratio: {pruning_ratio:.4f}")
 
     # Compute gamma = H(Y) / avg_MI
     if avg_mi > 1e-10:
@@ -620,7 +646,7 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
         gamma = np.inf
     print(f"    Gamma (H(Y) / avg_MI): {gamma:.4f}")
 
-    return avg_mi, all_mi, output_entropy, gamma
+    return avg_mi, all_mi, output_entropy, gamma, q, pruning_ratio, neuron_mis
 
 
 def main():
@@ -643,10 +669,10 @@ def main():
                         help='Learning rate')
     parser.add_argument('--max_epochs', type=int, default=200,
                         help='Maximum epochs for initial training')
-    parser.add_argument('--retrain_epochs', type=int, default=10,
-                        help='Epochs for retraining after pruning')
     parser.add_argument('--target_train_acc', type=float, default=100.0,
                         help='Target train accuracy')
+    parser.add_argument('--dropout', type=float, default=0.5,
+                        help='Dropout rate before output layer (default: 0.5)')
 
     args = parser.parse_args()
 
@@ -668,6 +694,7 @@ def main():
     print(f"Task:              MNIST Binary (0 vs 1)")
     print(f"Seed:              {args.seed}")
     print(f"Device:            {args.device}")
+    print(f"Dropout:           {args.dropout}")
     print(f"Target Train Acc:  {args.target_train_acc}%")
     print(f"{'='*80}\n")
 
@@ -675,7 +702,8 @@ def main():
     model = MLP_Binary(
         n_layers=args.n_layers,
         neurons_per_layer=args.neurons_per_layer,
-        num_classes=2
+        num_classes=2,
+        dropout=args.dropout
     )
     print(f"Model parameters: {model.count_parameters():,}")
 
@@ -725,42 +753,40 @@ def main():
 
     # Per-layer analysis
     print(f"\n{'='*80}")
-    print("Per-layer Analysis: Pruning Ratio and MI (using LNC-KSG)")
+    print("Per-layer Analysis: MI-based Pruning and Statistics (using LNC-KSG)")
     print(f"{'='*80}")
 
     layer_pruning_ratios = []
     layer_avg_mis = []
     layer_entropies = []
     layer_gammas = []
+    layer_qs = []
+    layer_neuron_mis = []
 
     for layer_idx in range(args.n_layers):
         print(f"\n--- Layer {layer_idx + 1} ---")
 
-        # Compute pruning ratio
-        min_neurons, pruning_ratio = compute_pruning_ratio(
-            model, layer_idx, trainloader, args.device,
-            target_train_acc=original_train_acc,
-            retrain_epochs=args.retrain_epochs,
-            lr=args.lr
-        )
-        layer_pruning_ratios.append(pruning_ratio)
-
         # Compute MI statistics using LNC-KSG
-        print(f"\n  Computing MI for layer {layer_idx + 1}...")
-        avg_mi, all_mi, output_entropy, gamma = compute_layer_mi_stats(
+        # q = number of neurons with MI > 0 (neurons that cannot be pruned)
+        # pruning_ratio = fraction of neurons with MI = 0 (can be pruned)
+        avg_mi, all_mi, output_entropy, gamma, q, pruning_ratio, neuron_mis = compute_layer_mi_stats(
             activations[layer_idx], labels, args.neurons_per_layer
         )
         layer_avg_mis.append(avg_mi)
         layer_entropies.append(output_entropy)
         layer_gammas.append(gamma)
+        layer_qs.append(q)
+        layer_pruning_ratios.append(pruning_ratio)
+        layer_neuron_mis.append(neuron_mis)
 
         # Store layer results
         results['layer_results'][layer_idx] = {
-            'min_neurons': min_neurons,
+            'q': q,
             'pruning_ratio': pruning_ratio,
             'avg_mi': avg_mi,
             'output_entropy': output_entropy,
             'gamma': gamma,
+            'neuron_mis': neuron_mis.tolist(),
             'all_mi': {str(k): v for k, v in all_mi.items()}  # Convert tuple keys to strings
         }
 
@@ -769,16 +795,16 @@ def main():
     results['layer_avg_mis'] = np.array(layer_avg_mis)
     results['layer_entropies'] = np.array(layer_entropies)
     results['layer_gammas'] = np.array(layer_gammas)
+    results['layer_qs'] = np.array(layer_qs)
 
     # Print summary
     print(f"\n{'='*80}")
     print("Summary (MI in bits, H(Y) discrete)")
     print(f"{'='*80}")
-    print(f"{'Layer':<8} {'Prune Ratio':<12} {'Avg MI':<12} {'H(Y)':<12} {'Gamma':<12} {'q':<8}")
+    print(f"{'Layer':<8} {'q':<8} {'Prune Ratio':<12} {'Avg MI':<12} {'H(Y)':<12} {'Gamma':<12}")
     print("-" * 64)
     for i in range(args.n_layers):
-        q = int((1 - layer_pruning_ratios[i]) * args.neurons_per_layer)
-        print(f"{i+1:<8} {layer_pruning_ratios[i]:<12.4f} {layer_avg_mis[i]:<12.4f} {layer_entropies[i]:<12.4f} {layer_gammas[i]:<12.4f} {q:<8}")
+        print(f"{i+1:<8} {layer_qs[i]:<8} {layer_pruning_ratios[i]:<12.4f} {layer_avg_mis[i]:<12.4f} {layer_entropies[i]:<12.4f} {layer_gammas[i]:<12.4f}")
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
@@ -792,19 +818,22 @@ def main():
         'train_acc': results['train_acc'],
         'test_acc': results['test_acc'],
         'epochs': results['epochs'],
+        'dropout': args.dropout,
         'layer_pruning_ratios': results['layer_pruning_ratios'],
         'layer_avg_mis': results['layer_avg_mis'],
         'layer_entropies': results['layer_entropies'],
         'layer_gammas': results['layer_gammas'],
+        'layer_qs': results['layer_qs'],
     }
 
     # Add per-layer details
     for layer_idx, layer_data in results['layer_results'].items():
-        flat_results[f'layer{layer_idx}_min_neurons'] = layer_data['min_neurons']
+        flat_results[f'layer{layer_idx}_q'] = layer_data['q']
         flat_results[f'layer{layer_idx}_pruning_ratio'] = layer_data['pruning_ratio']
         flat_results[f'layer{layer_idx}_avg_mi'] = layer_data['avg_mi']
         flat_results[f'layer{layer_idx}_output_entropy'] = layer_data['output_entropy']
         flat_results[f'layer{layer_idx}_gamma'] = layer_data['gamma']
+        flat_results[f'layer{layer_idx}_neuron_mis'] = np.array(layer_data['neuron_mis'])
 
     np.savez(save_path, **flat_results)
     print(f"\nResults saved to: {save_path}")
