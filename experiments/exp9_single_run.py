@@ -2,7 +2,8 @@
 Experiment 9: MI-based pruning analysis for binary MNIST classification.
 
 This experiment:
-1. Trains a small MLP on MNIST binary (0 vs 1) with dropout before output layer
+1. Trains a small MLP on MNIST binary (0 vs 1) with progressive per-layer dropout
+   (layer 1: 0, layer 2: 0.1, layer 3: 0.2, etc.)
 2. For each layer, computes:
    - MI between all neuron subsets and output (class labels) using LNC-KSG
    - q = smallest subset size r where ALL subsets of size r have MI >= H(Y)
@@ -35,10 +36,10 @@ class MLP_Binary(nn.Module):
     Architecture:
     - Input: 784 (28x28 flattened)
     - N hidden layers with M neurons each
-    - Dropout before output layer
+    - Progressive per-layer dropout (layer 1: 0, layer 2: 0.1, layer 3: 0.2, etc.)
     - Output: 2 classes (digits 0 and 1)
     """
-    def __init__(self, n_layers=5, neurons_per_layer=5, num_classes=2, dropout=0.5):
+    def __init__(self, n_layers=5, neurons_per_layer=5, num_classes=2, dropout_base=0.1):
         super(MLP_Binary, self).__init__()
 
         self.n_layers = n_layers
@@ -48,21 +49,25 @@ class MLP_Binary(nn.Module):
         # Build layers as a ModuleList for easy access
         self.hidden_layers = nn.ModuleList()
         self.activations = nn.ModuleList()
+        self.dropouts = nn.ModuleList()
 
-        # First hidden layer: 784 -> neurons_per_layer
+        # First hidden layer: 784 -> neurons_per_layer (no dropout)
         self.hidden_layers.append(nn.Linear(self.input_dim, neurons_per_layer))
         self.activations.append(nn.ReLU())
+        self.dropouts.append(nn.Dropout(p=0.0))  # Layer 1: no dropout
 
-        # Additional hidden layers
-        for _ in range(n_layers - 1):
+        # Additional hidden layers with progressive dropout
+        for i in range(1, n_layers):
             self.hidden_layers.append(nn.Linear(neurons_per_layer, neurons_per_layer))
             self.activations.append(nn.ReLU())
-
-        # Dropout before output layer
-        self.dropout = nn.Dropout(p=dropout)
+            # Layer i+1 has dropout = i * dropout_base (0.1, 0.2, 0.3, 0.4 for layers 2-5)
+            self.dropouts.append(nn.Dropout(p=i * dropout_base))
 
         # Output layer
         self.output_layer = nn.Linear(neurons_per_layer, num_classes)
+
+        # Store dropout rates for reference
+        self.dropout_rates = [0.0] + [i * dropout_base for i in range(1, n_layers)]
 
         self._initialize_weights()
 
@@ -75,19 +80,18 @@ class MLP_Binary(nn.Module):
 
     def forward(self, x):
         x = x.view(x.size(0), -1)
-        for layer, act in zip(self.hidden_layers, self.activations):
-            x = act(layer(x))
-        x = self.dropout(x)
+        for layer, act, drop in zip(self.hidden_layers, self.activations, self.dropouts):
+            x = drop(act(layer(x)))
         return self.output_layer(x)
 
     def forward_with_activations(self, x):
-        """Forward pass returning activations at each hidden layer."""
+        """Forward pass returning activations at each hidden layer (before dropout)."""
         x = x.view(x.size(0), -1)
         activations = []
-        for layer, act in zip(self.hidden_layers, self.activations):
+        for layer, act, drop in zip(self.hidden_layers, self.activations, self.dropouts):
             x = act(layer(x))
-            activations.append(x)
-        x = self.dropout(x)
+            activations.append(x.clone())  # Store activations before dropout
+            x = drop(x)
         output = self.output_layer(x)
         return output, activations
 
@@ -676,10 +680,10 @@ def main():
     )
     parser.add_argument('--seed', type=int, required=True,
                         help='Random seed')
-    parser.add_argument('--n_layers', type=int, default=3,
-                        help='Number of hidden layers (default: 3)')
-    parser.add_argument('--neurons_per_layer', type=int, default=4,
-                        help='Neurons per hidden layer (default: 4)')
+    parser.add_argument('--n_layers', type=int, default=5,
+                        help='Number of hidden layers (default: 5)')
+    parser.add_argument('--neurons_per_layer', type=int, default=5,
+                        help='Neurons per hidden layer (default: 5)')
     parser.add_argument('--batch_size', type=int, default=128,
                         help='Batch size')
     parser.add_argument('--device', type=str, default='cuda',
@@ -692,8 +696,8 @@ def main():
                         help='Maximum epochs for initial training')
     parser.add_argument('--target_train_acc', type=float, default=100.0,
                         help='Target train accuracy')
-    parser.add_argument('--dropout', type=float, default=0.5,
-                        help='Dropout rate before output layer (default: 0.5)')
+    parser.add_argument('--dropout_base', type=float, default=0.1,
+                        help='Base dropout rate (layer i has dropout = (i-1)*base, default: 0.1)')
 
     args = parser.parse_args()
 
@@ -715,7 +719,11 @@ def main():
     print(f"Task:              MNIST Binary (0 vs 1)")
     print(f"Seed:              {args.seed}")
     print(f"Device:            {args.device}")
-    print(f"Dropout:           {args.dropout}")
+    print(f"Dropout base:      {args.dropout_base}")
+
+    # Show per-layer dropout rates
+    dropout_rates = [0.0] + [i * args.dropout_base for i in range(1, args.n_layers)]
+    print(f"Per-layer dropout: {dropout_rates}")
     print(f"Target Train Acc:  {args.target_train_acc}%")
     print(f"{'='*80}\n")
 
@@ -724,7 +732,7 @@ def main():
         n_layers=args.n_layers,
         neurons_per_layer=args.neurons_per_layer,
         num_classes=2,
-        dropout=args.dropout
+        dropout_base=args.dropout_base
     )
     print(f"Model parameters: {model.count_parameters():,}")
 
@@ -839,7 +847,8 @@ def main():
         'train_acc': results['train_acc'],
         'test_acc': results['test_acc'],
         'epochs': results['epochs'],
-        'dropout': args.dropout,
+        'dropout_base': args.dropout_base,
+        'dropout_rates': np.array(model.dropout_rates),
         'layer_pruning_ratios': results['layer_pruning_ratios'],
         'layer_avg_mis': results['layer_avg_mis'],
         'layer_entropies': results['layer_entropies'],
