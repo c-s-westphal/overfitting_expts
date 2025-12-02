@@ -2338,10 +2338,10 @@ def plot_combined_mlp_vgg_occlusion():
     vgg_archs = ['vgg9', 'vgg11', 'vgg13', 'vgg16', 'vgg19']
     vgg_labels = ['VGG9', 'VGG11', 'VGG13', 'VGG16', 'VGG19']
 
-    # Create figure with 2 rows × 5 columns
-    fig = plt.figure(figsize=(16, 6.5))
-    gs = gridspec.GridSpec(2, 5, figure=fig, hspace=0.15, wspace=0.01,
-                          left=0.05, right=0.92, top=0.95, bottom=0.08)
+    # Create figure with 2 rows × 5 columns (shorter height)
+    fig = plt.figure(figsize=(16, 5.0))
+    gs = gridspec.GridSpec(2, 5, figure=fig, hspace=0.12, wspace=0.01,
+                          left=0.05, right=0.92, top=0.94, bottom=0.06)
 
     im = None  # Will store the last imshow object for colorbar
 
@@ -2398,11 +2398,8 @@ def plot_combined_mlp_vgg_occlusion():
         ax.imshow(sample_image, cmap='gray', alpha=0.7)
         im = ax.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
 
-        # Title with row label only on leftmost column
-        if col_idx == 0:
-            ax.set_title(f'MLP: {depth} layers', fontsize=16, fontweight='bold', pad=10)
-        else:
-            ax.set_title(f'{depth} layers', fontsize=16, fontweight='bold', pad=10)
+        # Title
+        ax.set_title(f'{depth} layers', fontsize=16, fontweight='bold', pad=8)
 
         ax.axis('off')
 
@@ -2467,21 +2464,18 @@ def plot_combined_mlp_vgg_occlusion():
             ax.imshow(sample_image_display)
         im = ax.imshow(occ_epoch1_norm, cmap='hot', alpha=1.0, vmin=0, vmax=1)
 
-        # Title with row label only on leftmost column
-        if col_idx == 0:
-            ax.set_title(f'CNN: {display_name}', fontsize=16, fontweight='bold', pad=10)
-        else:
-            ax.set_title(display_name, fontsize=16, fontweight='bold', pad=10)
+        # Title
+        ax.set_title(display_name, fontsize=16, fontweight='bold', pad=8)
 
         ax.axis('off')
 
     # Add colorbar
     if im is not None:
-        cbar_ax = fig.add_axes([0.93, 0.15, 0.015, 0.7])
+        cbar_ax = fig.add_axes([0.93, 0.12, 0.015, 0.76])
         cbar = fig.colorbar(im, cax=cbar_ax)
-        cbar.set_label('Occlusion Sensitivity', rotation=270, labelpad=25,
-                      fontsize=16, fontweight='normal')
-        cbar.ax.tick_params(labelsize=14)
+        cbar.set_label('Loss Dependence on Input Pixels', rotation=270, labelpad=25,
+                      fontsize=14, fontweight='normal')
+        cbar.ax.tick_params(labelsize=12)
 
     # Save figure
     os.makedirs('plots', exist_ok=True)
