@@ -71,8 +71,8 @@ python3.9 -u experiments/exp9_single_run.py \
     --batch_size 128 \
     --device cuda \
     --output_dir results/exp9 \
-    --epochs 100 \
-    --retrain_epochs 5 \
+    --max_epochs 200 \
+    --retrain_epochs 10 \
     --lr 0.001
 
 date
