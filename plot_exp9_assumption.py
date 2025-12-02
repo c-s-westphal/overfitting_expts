@@ -21,10 +21,10 @@ def assumption_true(q_j, n_j, gamma_i):
     """
     Test whether the assumption holds for a given deeper layer j and shallower layer i.
 
-    Returns True if: sum_{r=q_j}^{n_j} C(n_j, r) >= (2^{n_j} - 1) / gamma_i
+    Returns True if: sum_{r=q_j}^{n_j} C(n_j, r) >= (2^{n_j} - 2) / gamma_i
     """
     lhs = sum(comb(n_j, r) for r in range(q_j, n_j + 1))
-    rhs = (2**n_j - 1) / gamma_i
+    rhs = (2**n_j - 2) / gamma_i
     return lhs >= rhs
 
 
@@ -111,11 +111,11 @@ def plot_assumption_validity(df, output_path=None):
     plt.contourf(Q, G, Z, levels=[-0.5, 0.5, 1.5],
                  colors=['#ff6b6b', '#4dabf7'], alpha=0.4)
 
-    # Compute boundary curve: gamma = (2^n - 1) / sum_{r=q}^{n} C(n, r)
+    # Compute boundary curve: gamma = (2^n - 2) / sum_{r=q}^{n} C(n, r)
     gamma_boundary = []
     for qj in q_range:
         lhs = sum(comb(n_j, r) for r in range(qj, n_j + 1))
-        gamma_boundary.append((2**n_j - 1) / lhs if lhs > 0 else np.nan)
+        gamma_boundary.append((2**n_j - 2) / lhs if lhs > 0 else np.nan)
 
     plt.plot(q_range, gamma_boundary, 'k--', linewidth=2, label='Assumption Boundary')
 
@@ -167,10 +167,10 @@ def plot_assumption_validity(df, output_path=None):
              transform=plt.gca().transAxes, fontsize=11, verticalalignment='top',
              bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-    plt.xlabel(r"$q_j$ (min subset size with MI $\geq$ H(Y) at layer j)", fontsize=12)
+    plt.xlabel(r"$q_j$ (min subset size with MI $\geq$ MI(full) at layer j)", fontsize=12)
     plt.ylabel(r"$\gamma_i$ (H(Y) / avg MI at layer i)", fontsize=12)
     plt.title(f"Layerwise Pruning Assumption Validity - {dataset_label}\n" +
-              r"$\sum_{r=q_j}^{n_j} \binom{n_j}{r} \geq \frac{2^{n_j}-1}{\gamma_i}$", fontsize=12)
+              r"$\sum_{r=q_j}^{n_j} \binom{n_j}{r} \geq \frac{2^{n_j}-2}{\gamma_i}$", fontsize=12)
     plt.xlim(-0.5, n_j + 0.5)
     plt.xticks(q_range)
     plt.grid(True, alpha=0.3)

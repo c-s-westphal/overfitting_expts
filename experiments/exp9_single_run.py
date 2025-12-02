@@ -26,7 +26,7 @@ from scipy.special import digamma
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data.data_loader import get_mnist_binary_dataloaders, get_mnist_dataloaders
+from data.data_loader import get_mnist_binary_dataloaders, get_mnist_5class_dataloaders, get_mnist_dataloaders
 
 
 class MLP_Binary(nn.Module):
@@ -678,11 +678,11 @@ def main():
     )
     parser.add_argument('--seed', type=int, required=True,
                         help='Random seed')
-    parser.add_argument('--dataset', type=str, default='mnist_binary',
-                        choices=['mnist_binary', 'mnist_full'],
-                        help='Dataset to use: mnist_binary (0 vs 1) or mnist_full (10 classes)')
-    parser.add_argument('--n_layers', type=int, default=5,
-                        help='Number of hidden layers (default: 5)')
+    parser.add_argument('--dataset', type=str, default='mnist_5class',
+                        choices=['mnist_binary', 'mnist_5class', 'mnist_full'],
+                        help='Dataset: mnist_binary (0 vs 1), mnist_5class (0-4), or mnist_full (10 classes)')
+    parser.add_argument('--n_layers', type=int, default=10,
+                        help='Number of hidden layers (default: 10)')
     parser.add_argument('--neurons_per_layer', type=int, default=5,
                         help='Neurons per hidden layer (default: 5)')
     parser.add_argument('--batch_size', type=int, default=128,
@@ -717,6 +717,9 @@ def main():
     if args.dataset == 'mnist_binary':
         num_classes = 2
         task_name = "MNIST Binary (0 vs 1)"
+    elif args.dataset == 'mnist_5class':
+        num_classes = 5
+        task_name = "MNIST 5-class (0-4)"
     else:  # mnist_full
         num_classes = 10
         task_name = "MNIST Full (10 classes)"
@@ -749,6 +752,11 @@ def main():
     # Load data
     if args.dataset == 'mnist_binary':
         trainloader, testloader = get_mnist_binary_dataloaders(
+            batch_size=args.batch_size,
+            num_workers=4
+        )
+    elif args.dataset == 'mnist_5class':
+        trainloader, testloader = get_mnist_5class_dataloaders(
             batch_size=args.batch_size,
             num_workers=4
         )

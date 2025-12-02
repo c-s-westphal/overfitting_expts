@@ -299,6 +299,46 @@ def get_mnist_binary_dataloaders(batch_size=128, num_workers=4, augment=False):
     return trainloader, testloader
 
 
+def get_mnist_5class_dataloaders(batch_size=128, num_workers=4, augment=False):
+    """
+    Get MNIST dataloaders for 5-class classification (digits 0-4).
+
+    Args:
+        batch_size: Batch size for dataloaders
+        num_workers: Number of workers for data loading
+        augment: Whether to use data augmentation
+
+    Returns:
+        trainloader, testloader (labels 0-4 for digits 0-4)
+    """
+    transform_train, transform_test = get_mnist_transforms(augment=augment)
+
+    # Load full MNIST
+    full_trainset = torchvision.datasets.MNIST(
+        root='./data', train=True, download=True, transform=transform_train
+    )
+    full_testset = torchvision.datasets.MNIST(
+        root='./data', train=False, download=True, transform=transform_test
+    )
+
+    # Filter to only digits 0-4
+    train_indices = [i for i, (_, label) in enumerate(full_trainset) if label in [0, 1, 2, 3, 4]]
+    test_indices = [i for i, (_, label) in enumerate(full_testset) if label in [0, 1, 2, 3, 4]]
+
+    trainset = Subset(full_trainset, train_indices)
+    testset = Subset(full_testset, test_indices)
+
+    trainloader = DataLoader(
+        trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+    )
+
+    testloader = DataLoader(
+        testset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    )
+
+    return trainloader, testloader
+
+
 def get_celeba_transforms(augment=True, image_size=64):
     """
     Get CelebA transforms with center crop and resize.
