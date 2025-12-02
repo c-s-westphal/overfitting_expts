@@ -28,13 +28,16 @@ def assumption_true(q_j, n_j, gamma_i):
     return lhs >= rhs
 
 
-def load_exp9_results(results_dir='results/exp9', dataset_filter=None):
+def load_exp9_results(results_dir='results/exp9', dataset_filter=None,
+                      n_layers_filter=None, dropout_filter=None):
     """Load all exp9 results and aggregate across seeds.
 
     Args:
         results_dir: Directory containing result files
         dataset_filter: If specified, only load results for this dataset
-                       ('mnist_binary' or 'mnist_full')
+                       ('mnist_binary', 'mnist_5class', or 'mnist_full')
+        n_layers_filter: If specified, only load results with this many layers
+        dropout_filter: If specified, only load results with this dropout_base
     """
     all_data = []
 
@@ -47,6 +50,9 @@ def load_exp9_results(results_dir='results/exp9', dataset_filter=None):
             n_layers = int(data['n_layers'])
             neurons_per_layer = int(data['neurons_per_layer'])
 
+            # Get dropout_base (handle old files without it)
+            dropout_base = float(data['dropout_base']) if 'dropout_base' in data.keys() else None
+
             # Get dataset info (handle old files without dataset field)
             if 'dataset' in data.keys():
                 dataset = str(data['dataset'])
@@ -57,6 +63,14 @@ def load_exp9_results(results_dir='results/exp9', dataset_filter=None):
             if dataset_filter is not None and dataset != dataset_filter:
                 continue
 
+            # Filter by n_layers if specified
+            if n_layers_filter is not None and n_layers != n_layers_filter:
+                continue
+
+            # Filter by dropout_base if specified
+            if dropout_filter is not None and dropout_base != dropout_filter:
+                continue
+
             num_classes = int(data['num_classes']) if 'num_classes' in data.keys() else 2
 
             for layer_idx in range(n_layers):
@@ -64,6 +78,8 @@ def load_exp9_results(results_dir='results/exp9', dataset_filter=None):
                     'seed': seed,
                     'dataset': dataset,
                     'num_classes': num_classes,
+                    'n_layers': n_layers,
+                    'dropout_base': dropout_base,
                     'layer': layer_idx,
                     'n': neurons_per_layer,
                     'q': int(data[f'layer{layer_idx}_q']),
@@ -84,11 +100,30 @@ def plot_assumption_validity(df, output_path=None):
 
     # Get dataset info for title
     dataset = df['dataset'].iloc[0] if 'dataset' in df.columns else 'mnist_binary'
-    dataset_label = "MNIST Full (10 classes)" if dataset == 'mnist_full' else "MNIST Binary (0 vs 1)"
+    if dataset == 'mnist_full':
+        dataset_label = "MNIST Full (10 classes)"
+    elif dataset == 'mnist_5class':
+        dataset_label = "MNIST 5-class (0-4)"
+    else:
+        dataset_label = "MNIST Binary (0 vs 1)"
 
-    # Set output path based on dataset
+    # Get configuration info
+    n_layers = df['n_layers'].iloc[0] if 'n_layers' in df.columns else None
+    dropout_base = df['dropout_base'].iloc[0] if 'dropout_base' in df.columns else None
+    neurons = df['n'].iloc[0]
+
+    # Build config string for title and filename
+    config_parts = []
+    if n_layers is not None:
+        config_parts.append(f"L{n_layers}")
+    config_parts.append(f"N{neurons}")
+    if dropout_base is not None:
+        config_parts.append(f"D{dropout_base}")
+    config_str = "_".join(config_parts)
+
+    # Set output path based on dataset and config
     if output_path is None:
-        output_path = f'plots/exp9_{dataset}_assumption_validity.png'
+        output_path = f'plots/exp9_{dataset}_{config_str}_assumption_validity.png'
 
     # Get n_j (assuming all layers have same number of neurons)
     n_j = df['n'].iloc[0]
@@ -167,10 +202,18 @@ def plot_assumption_validity(df, output_path=None):
              transform=plt.gca().transAxes, fontsize=11, verticalalignment='top',
              bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-    plt.xlabel(r"$q_j$ (min subset size with avg MI $\geq$ MI(full) at layer j)", fontsize=12)
+    # Build title with config info
+    title_config = f"{dataset_label}"
+    if n_layers is not None:
+        title_config += f", {n_layers} layers"
+    title_config += f", {neurons} neurons"
+    if dropout_base is not None:
+        title_config += f", dropout={dropout_base}"
+
+    plt.xlabel(r"$q_j$ (min neurons to recover accuracy at layer j)", fontsize=12)
     plt.ylabel(r"$\gamma_i$ (H(Y) / avg MI at layer i)", fontsize=12)
-    plt.title(f"Layerwise Pruning Assumption Validity - {dataset_label}\n" +
-              r"$\sum_{r=q_j}^{n_j} \binom{n_j}{r} \geq \frac{2^{n_j}-2}{\gamma_i}$", fontsize=12)
+    plt.title(f"Layerwise Pruning Assumption Validity\n{title_config}\n" +
+              r"$\sum_{r=q_j}^{n_j} \binom{n_j}{r} \geq \frac{2^{n_j}-2}{\gamma_i}$", fontsize=11)
     plt.xlim(-0.5, n_j + 0.5)
     plt.xticks(q_range)
     plt.grid(True, alpha=0.3)
@@ -198,18 +241,34 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Plot exp9 assumption validity')
     parser.add_argument('--dataset', type=str, default=None,
-                        choices=['mnist_binary', 'mnist_full'],
+                        choices=['mnist_binary', 'mnist_5class', 'mnist_full'],
                         help='Filter by dataset (default: plot all)')
+    parser.add_argument('--n_layers', type=int, default=None,
+                        help='Filter by number of layers')
+    parser.add_argument('--dropout', type=float, default=None,
+                        help='Filter by dropout_base value')
     parser.add_argument('--results_dir', type=str, default='results/exp9',
                         help='Directory containing results')
     args = parser.parse_args()
 
     # Load data
-    df = load_exp9_results(results_dir=args.results_dir, dataset_filter=args.dataset)
+    df = load_exp9_results(
+        results_dir=args.results_dir,
+        dataset_filter=args.dataset,
+        n_layers_filter=args.n_layers,
+        dropout_filter=args.dropout
+    )
 
     if df.empty:
+        filter_desc = []
+        if args.dataset:
+            filter_desc.append(f"dataset={args.dataset}")
+        if args.n_layers:
+            filter_desc.append(f"n_layers={args.n_layers}")
+        if args.dropout is not None:
+            filter_desc.append(f"dropout={args.dropout}")
         print(f"No results found in {args.results_dir}" +
-              (f" for dataset {args.dataset}" if args.dataset else ""))
+              (f" for {', '.join(filter_desc)}" if filter_desc else ""))
     else:
         print("Loaded data:")
         print(df.to_string(index=False))
