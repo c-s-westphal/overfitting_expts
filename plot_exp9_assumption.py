@@ -28,8 +28,14 @@ def assumption_true(q_j, n_j, gamma_i):
     return lhs >= rhs
 
 
-def load_exp9_results(results_dir='results/exp9'):
-    """Load all exp9 results and aggregate across seeds."""
+def load_exp9_results(results_dir='results/exp9', dataset_filter=None):
+    """Load all exp9 results and aggregate across seeds.
+
+    Args:
+        results_dir: Directory containing result files
+        dataset_filter: If specified, only load results for this dataset
+                       ('mnist_binary' or 'mnist_full')
+    """
     all_data = []
 
     for filename in sorted(os.listdir(results_dir)):
@@ -41,9 +47,23 @@ def load_exp9_results(results_dir='results/exp9'):
             n_layers = int(data['n_layers'])
             neurons_per_layer = int(data['neurons_per_layer'])
 
+            # Get dataset info (handle old files without dataset field)
+            if 'dataset' in data.keys():
+                dataset = str(data['dataset'])
+            else:
+                dataset = 'mnist_binary'  # Default for old files
+
+            # Filter by dataset if specified
+            if dataset_filter is not None and dataset != dataset_filter:
+                continue
+
+            num_classes = int(data['num_classes']) if 'num_classes' in data.keys() else 2
+
             for layer_idx in range(n_layers):
                 all_data.append({
                     'seed': seed,
+                    'dataset': dataset,
+                    'num_classes': num_classes,
                     'layer': layer_idx,
                     'n': neurons_per_layer,
                     'q': int(data[f'layer{layer_idx}_q']),
@@ -55,8 +75,20 @@ def load_exp9_results(results_dir='results/exp9'):
     return pd.DataFrame(all_data)
 
 
-def plot_assumption_validity(df, output_path='plots/exp9_assumption_validity.png'):
+def plot_assumption_validity(df, output_path=None):
     """Create the assumption validity plot."""
+
+    if df.empty:
+        print("No data to plot!")
+        return None
+
+    # Get dataset info for title
+    dataset = df['dataset'].iloc[0] if 'dataset' in df.columns else 'mnist_binary'
+    dataset_label = "MNIST Full (10 classes)" if dataset == 'mnist_full' else "MNIST Binary (0 vs 1)"
+
+    # Set output path based on dataset
+    if output_path is None:
+        output_path = f'plots/exp9_{dataset}_assumption_validity.png'
 
     # Get n_j (assuming all layers have same number of neurons)
     n_j = df['n'].iloc[0]
@@ -137,7 +169,7 @@ def plot_assumption_validity(df, output_path='plots/exp9_assumption_validity.png
 
     plt.xlabel(r"$q_j$ (min subset size with MI $\geq$ H(Y) at layer j)", fontsize=12)
     plt.ylabel(r"$\gamma_i$ (H(Y) / avg MI at layer i)", fontsize=12)
-    plt.title("Layerwise Pruning Assumption Validity\n" +
+    plt.title(f"Layerwise Pruning Assumption Validity - {dataset_label}\n" +
               r"$\sum_{r=q_j}^{n_j} \binom{n_j}{r} \geq \frac{2^{n_j}-1}{\gamma_i}$", fontsize=12)
     plt.xlim(-0.5, n_j + 0.5)
     plt.xticks(q_range)
@@ -162,11 +194,26 @@ def plot_assumption_validity(df, output_path='plots/exp9_assumption_validity.png
 
 
 if __name__ == "__main__":
-    # Load data
-    df = load_exp9_results()
-    print("Loaded data:")
-    print(df.to_string(index=False))
-    print()
+    import argparse
 
-    # Create plot
-    pairs_df = plot_assumption_validity(df)
+    parser = argparse.ArgumentParser(description='Plot exp9 assumption validity')
+    parser.add_argument('--dataset', type=str, default=None,
+                        choices=['mnist_binary', 'mnist_full'],
+                        help='Filter by dataset (default: plot all)')
+    parser.add_argument('--results_dir', type=str, default='results/exp9',
+                        help='Directory containing results')
+    args = parser.parse_args()
+
+    # Load data
+    df = load_exp9_results(results_dir=args.results_dir, dataset_filter=args.dataset)
+
+    if df.empty:
+        print(f"No results found in {args.results_dir}" +
+              (f" for dataset {args.dataset}" if args.dataset else ""))
+    else:
+        print("Loaded data:")
+        print(df.to_string(index=False))
+        print()
+
+        # Create plot
+        pairs_df = plot_assumption_validity(df)

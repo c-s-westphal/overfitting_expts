@@ -26,18 +26,18 @@ from scipy.special import digamma
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data.data_loader import get_mnist_binary_dataloaders
+from data.data_loader import get_mnist_binary_dataloaders, get_mnist_dataloaders
 
 
 class MLP_Binary(nn.Module):
     """
-    Small MLP for binary MNIST classification.
+    Small MLP for MNIST classification.
 
     Architecture:
     - Input: 784 (28x28 flattened)
     - N hidden layers with M neurons each
     - Progressive per-layer dropout (layer 1: 0, layer 2: 0.1, layer 3: 0.2, etc.)
-    - Output: 2 classes (digits 0 and 1)
+    - Output: num_classes (2 for binary, 10 for full MNIST)
     """
     def __init__(self, n_layers=5, neurons_per_layer=5, num_classes=2, dropout_base=0.1):
         super(MLP_Binary, self).__init__()
@@ -680,6 +680,9 @@ def main():
     )
     parser.add_argument('--seed', type=int, required=True,
                         help='Random seed')
+    parser.add_argument('--dataset', type=str, default='mnist_binary',
+                        choices=['mnist_binary', 'mnist_full'],
+                        help='Dataset to use: mnist_binary (0 vs 1) or mnist_full (10 classes)')
     parser.add_argument('--n_layers', type=int, default=5,
                         help='Number of hidden layers (default: 5)')
     parser.add_argument('--neurons_per_layer', type=int, default=5,
@@ -712,11 +715,20 @@ def main():
         print("CUDA not available, using CPU")
         args.device = 'cpu'
 
+    # Determine number of classes based on dataset
+    if args.dataset == 'mnist_binary':
+        num_classes = 2
+        task_name = "MNIST Binary (0 vs 1)"
+    else:  # mnist_full
+        num_classes = 10
+        task_name = "MNIST Full (10 classes)"
+
     print(f"\n{'='*80}")
     print(f"Experiment 9: Pruning Ratio and MI Analysis")
     print(f"{'='*80}")
     print(f"Architecture:      MLP ({args.n_layers} layers × {args.neurons_per_layer} neurons)")
-    print(f"Task:              MNIST Binary (0 vs 1)")
+    print(f"Dataset:           {args.dataset}")
+    print(f"Task:              {task_name}")
     print(f"Seed:              {args.seed}")
     print(f"Device:            {args.device}")
     print(f"Dropout base:      {args.dropout_base}")
@@ -731,16 +743,22 @@ def main():
     model = MLP_Binary(
         n_layers=args.n_layers,
         neurons_per_layer=args.neurons_per_layer,
-        num_classes=2,
+        num_classes=num_classes,
         dropout_base=args.dropout_base
     )
     print(f"Model parameters: {model.count_parameters():,}")
 
     # Load data
-    trainloader, testloader = get_mnist_binary_dataloaders(
-        batch_size=args.batch_size,
-        num_workers=4
-    )
+    if args.dataset == 'mnist_binary':
+        trainloader, testloader = get_mnist_binary_dataloaders(
+            batch_size=args.batch_size,
+            num_workers=4
+        )
+    else:  # mnist_full
+        trainloader, testloader = get_mnist_dataloaders(
+            batch_size=args.batch_size,
+            num_workers=4
+        )
 
     # Count samples
     n_train = sum(len(batch[0]) for batch in trainloader)
@@ -772,6 +790,8 @@ def main():
     # Results storage
     results = {
         'seed': args.seed,
+        'dataset': args.dataset,
+        'num_classes': num_classes,
         'n_layers': args.n_layers,
         'neurons_per_layer': args.neurons_per_layer,
         'train_acc': original_train_acc,
@@ -837,11 +857,13 @@ def main():
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
-    save_path = f"{args.output_dir}/exp9_seed{args.seed}_results.npz"
+    save_path = f"{args.output_dir}/exp9_{args.dataset}_seed{args.seed}_results.npz"
 
     # Flatten layer_results for npz saving
     flat_results = {
         'seed': results['seed'],
+        'dataset': results['dataset'],
+        'num_classes': results['num_classes'],
         'n_layers': results['n_layers'],
         'neurons_per_layer': results['neurons_per_layer'],
         'train_acc': results['train_acc'],

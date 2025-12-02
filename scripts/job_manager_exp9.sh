@@ -66,6 +66,7 @@ echo "Running exp9 MI-based Pruning Analysis: seed=$seed"
 echo "Starting training..."
 python3.9 -u experiments/exp9_single_run.py \
     --seed "$seed" \
+    --dataset mnist_full \
     --n_layers 5 \
     --neurons_per_layer 5 \
     --batch_size 128 \
