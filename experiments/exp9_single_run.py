@@ -586,7 +586,7 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     Compute MI statistics for all subsets of neurons in a layer.
 
     Uses LNC-KSG estimator for MI (in bits) and discrete entropy for H(Y).
-    Note: q is computed separately via retraining-based pruning.
+    Note: q (retraining-based) is computed separately via retraining-based pruning.
 
     Args:
         activations: Array of shape (N, neurons_per_layer) - layer activations
@@ -601,6 +601,8 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
         gamma: H(Y) / avg_mi (attenuation factor)
         neuron_mis: List of individual neuron MIs
         full_mi: MI of the full neuron set
+        q_mi: Smallest subset size where full_mi <= 82.5th percentile of that size's MIs
+        mi_by_size: Dict mapping subset size to list of MI values
     """
     # Compute discrete output entropy H(Y) in bits
     output_entropy = compute_discrete_entropy(labels)
@@ -615,9 +617,11 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
     all_mi = {full_subset: full_mi}
     mi_values = []
     neuron_mis = []  # MI for individual neurons (subsets of size 1)
+    mi_by_size = {}  # Dict mapping subset size to list of MI values
 
     # Generate all subsets of size 1 to neurons_per_layer-1
-    for subset_size in range(1, neurons_per_layer):  # 1, 2, 3, 4
+    for subset_size in range(1, neurons_per_layer):  # 1, 2, 3, ..., n-1
+        mi_by_size[subset_size] = []
         for subset in combinations(neuron_indices, subset_size):
             # Extract activations for this subset
             subset_activations = activations[:, list(subset)]
@@ -626,6 +630,7 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
             mi = compute_lnc_ksg_mi(subset_activations, labels.reshape(-1, 1), k=k)
             all_mi[subset] = mi
             mi_values.append(mi)
+            mi_by_size[subset_size].append(mi)
 
             # Track individual neuron MIs
             if subset_size == 1:
@@ -633,6 +638,9 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
                 print(f"    Neuron {subset[0]}: MI = {mi:.4f} bits")
             else:
                 print(f"    Subset {subset}: MI = {mi:.4f} bits")
+
+    # Add full set to mi_by_size
+    mi_by_size[neurons_per_layer] = [full_mi]
 
     avg_mi = np.nanmean(mi_values)
     print(f"    Average MI across all subsets: {avg_mi:.4f} bits")
@@ -644,8 +652,23 @@ def compute_layer_mi_stats(activations, labels, neurons_per_layer=4, k=5):
         gamma = np.inf
     print(f"    Gamma (H(Y) / avg_MI): {gamma:.4f}")
 
+    # Compute q_mi: smallest subset size k where full_mi <= 82.5th percentile of size-k MIs
+    # This means there's ~65% chance a random size-k subset achieves MI >= full_mi
+    q_mi = neurons_per_layer  # Default to full size if no smaller size satisfies condition
+    for subset_size in range(1, neurons_per_layer):
+        mi_vals = np.array(mi_by_size[subset_size])
+        upper_bound = np.percentile(mi_vals, 82.5)
+        print(f"    Size {subset_size}: 82.5th percentile MI = {upper_bound:.4f} bits")
+        if full_mi <= upper_bound:
+            q_mi = subset_size
+            print(f"    -> q_mi = {q_mi} (full_mi {full_mi:.4f} <= upper bound {upper_bound:.4f})")
+            break
+
+    if q_mi == neurons_per_layer:
+        print(f"    -> q_mi = {q_mi} (no smaller subset size satisfies condition)")
+
     neuron_mis = np.array(neuron_mis)
-    return avg_mi, all_mi, output_entropy, gamma, neuron_mis, full_mi
+    return avg_mi, all_mi, output_entropy, gamma, neuron_mis, full_mi, q_mi, mi_by_size
 
 
 def main():
@@ -788,13 +811,15 @@ def main():
     layer_entropies = []
     layer_gammas = []
     layer_qs = []
+    layer_q_mis = []
     layer_neuron_mis = []
+    layer_mi_by_size = []
 
     for layer_idx in range(args.n_layers):
         print(f"\n--- Layer {layer_idx + 1} ---")
 
         # Compute MI statistics using LNC-KSG
-        avg_mi, all_mi, output_entropy, gamma, neuron_mis, full_mi = compute_layer_mi_stats(
+        avg_mi, all_mi, output_entropy, gamma, neuron_mis, full_mi, q_mi, mi_by_size = compute_layer_mi_stats(
             activations[layer_idx], labels, args.neurons_per_layer
         )
 
@@ -812,21 +837,25 @@ def main():
         layer_entropies.append(output_entropy)
         layer_gammas.append(gamma)
         layer_qs.append(q)
+        layer_q_mis.append(q_mi)
         layer_pruning_ratios.append(pruning_ratio)
         layer_neuron_mis.append(neuron_mis)
+        layer_mi_by_size.append(mi_by_size)
 
-        print(f"    Retraining-based q = {q}, Pruning ratio = {pruning_ratio:.4f}")
+        print(f"    Retraining-based q = {q}, MI-based q_mi = {q_mi}, Pruning ratio = {pruning_ratio:.4f}")
 
         # Store layer results
         results['layer_results'][layer_idx] = {
             'q': q,
+            'q_mi': q_mi,
             'pruning_ratio': pruning_ratio,
             'avg_mi': avg_mi,
             'full_mi': full_mi,
             'output_entropy': output_entropy,
             'gamma': gamma,
             'neuron_mis': neuron_mis.tolist(),
-            'all_mi': {str(k): v for k, v in all_mi.items()}  # Convert tuple keys to strings
+            'all_mi': {str(k): v for k, v in all_mi.items()},  # Convert tuple keys to strings
+            'mi_by_size': {k: v for k, v in mi_by_size.items()}  # Store MI by subset size
         }
 
     # Store summary arrays
@@ -835,15 +864,16 @@ def main():
     results['layer_entropies'] = np.array(layer_entropies)
     results['layer_gammas'] = np.array(layer_gammas)
     results['layer_qs'] = np.array(layer_qs)
+    results['layer_q_mis'] = np.array(layer_q_mis)
 
     # Print summary
     print(f"\n{'='*80}")
     print("Summary (MI in bits, H(Y) discrete)")
     print(f"{'='*80}")
-    print(f"{'Layer':<8} {'q':<8} {'Prune Ratio':<12} {'Avg MI':<12} {'H(Y)':<12} {'Gamma':<12}")
-    print("-" * 64)
+    print(f"{'Layer':<8} {'q':<8} {'q_mi':<8} {'Prune Ratio':<12} {'Avg MI':<12} {'H(Y)':<12} {'Gamma':<12}")
+    print("-" * 76)
     for i in range(args.n_layers):
-        print(f"{i+1:<8} {layer_qs[i]:<8} {layer_pruning_ratios[i]:<12.4f} {layer_avg_mis[i]:<12.4f} {layer_entropies[i]:<12.4f} {layer_gammas[i]:<12.4f}")
+        print(f"{i+1:<8} {layer_qs[i]:<8} {layer_q_mis[i]:<8} {layer_pruning_ratios[i]:<12.4f} {layer_avg_mis[i]:<12.4f} {layer_entropies[i]:<12.4f} {layer_gammas[i]:<12.4f}")
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
@@ -866,17 +896,22 @@ def main():
         'layer_entropies': results['layer_entropies'],
         'layer_gammas': results['layer_gammas'],
         'layer_qs': results['layer_qs'],
+        'layer_q_mis': results['layer_q_mis'],
     }
 
     # Add per-layer details
     for layer_idx, layer_data in results['layer_results'].items():
         flat_results[f'layer{layer_idx}_q'] = layer_data['q']
+        flat_results[f'layer{layer_idx}_q_mi'] = layer_data['q_mi']
         flat_results[f'layer{layer_idx}_pruning_ratio'] = layer_data['pruning_ratio']
         flat_results[f'layer{layer_idx}_avg_mi'] = layer_data['avg_mi']
         flat_results[f'layer{layer_idx}_full_mi'] = layer_data['full_mi']
         flat_results[f'layer{layer_idx}_output_entropy'] = layer_data['output_entropy']
         flat_results[f'layer{layer_idx}_gamma'] = layer_data['gamma']
         flat_results[f'layer{layer_idx}_neuron_mis'] = np.array(layer_data['neuron_mis'])
+        # Store MI values by subset size
+        for size, mi_vals in layer_data['mi_by_size'].items():
+            flat_results[f'layer{layer_idx}_mi_size{size}'] = np.array(mi_vals)
 
     np.savez(save_path, **flat_results)
     print(f"\nResults saved to: {save_path}")
