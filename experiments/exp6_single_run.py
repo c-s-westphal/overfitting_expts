@@ -153,27 +153,34 @@ def compute_occlusion_sensitivity(model, trainloader, criterion, device, samples
     }
 
 
-def train_model_multi_epoch(model, trainloader, testloader, device='cuda', lr=0.001, weight_decay=5e-4, epochs=1):
+def train_model_multi_epoch(model, trainloader, testloader, device='cuda', lr=0.001, weight_decay=5e-4,
+                            max_epochs=500, target_train_acc=99.99, occlusion_interval=10):
     """
-    Train model for multiple epochs and compute occlusion sensitivity at each epoch.
+    Train model until target_train_acc is reached, with cosine annealing LR scheduler.
+    Compute occlusion sensitivity every occlusion_interval epochs.
 
     Args:
         model: The VGG model to train
         trainloader: Training data loader
         testloader: Test data loader
         device: Device to train on (cuda or cpu)
-        lr: Learning rate for AdamW
+        lr: Initial learning rate for AdamW
         weight_decay: Weight decay
-        epochs: Number of epochs to train (default: 1)
+        max_epochs: Maximum number of training epochs
+        target_train_acc: Target training accuracy to stop (default: 99.99%)
+        occlusion_interval: Compute occlusion every N epochs (default: 10)
 
     Returns:
-        dict: Training metrics including occlusion at each epoch
+        dict: Training metrics including occlusion at intervals
     """
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
 
-    print(f"\nTraining for {epochs} epoch(s)...")
+    print(f"\nTraining until {target_train_acc}% train accuracy (max {max_epochs} epochs)...")
+    print(f"Using cosine annealing LR scheduler")
+    print(f"Computing occlusion every {occlusion_interval} epochs")
 
     # Store metrics for all epochs
     train_losses = []
@@ -183,10 +190,13 @@ def train_model_multi_epoch(model, trainloader, testloader, device='cuda', lr=0.
     generalization_gaps = []
     occlusion_data = {}
 
-    # Train for specified number of epochs
-    for epoch in range(1, epochs + 1):
+    final_epoch = max_epochs
+    pbar = tqdm(range(1, max_epochs + 1), desc="Training")
+
+    for epoch in pbar:
         train_loss, train_acc = train_epoch(model, trainloader, criterion, optimizer, device)
         test_loss, test_acc = evaluate(model, testloader, criterion, device)
+        scheduler.step()
         gap = train_acc - test_acc
 
         train_losses.append(train_loss)
@@ -195,16 +205,55 @@ def train_model_multi_epoch(model, trainloader, testloader, device='cuda', lr=0.
         test_accs.append(test_acc)
         generalization_gaps.append(gap)
 
-        print(f"\nEpoch {epoch} | Train Acc: {train_acc:.2f}% | Test Acc: {test_acc:.2f}% | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
+        current_lr = scheduler.get_last_lr()[0]
+        pbar.set_postfix({
+            'Epoch': epoch,
+            'Train': f'{train_acc:.2f}%',
+            'Test': f'{test_acc:.2f}%',
+            'LR': f'{current_lr:.6f}'
+        })
 
-        # Compute occlusion sensitivity at this epoch
-        print(f"\n{'='*80}")
-        print(f"Computing occlusion sensitivity at epoch {epoch}...")
-        print(f"{'='*80}")
-        occlusion = compute_occlusion_sensitivity(model, trainloader, criterion, device)
-        occlusion_data[f'occlusion_epoch{epoch}'] = occlusion
-        print(f"Epoch {epoch} - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap:.2f}%")
-        print(f"{'='*80}\n")
+        # Print progress every 10 epochs
+        if epoch % 10 == 0:
+            print(f"\nEpoch {epoch} | Train: {train_acc:.2f}% | Test: {test_acc:.2f}% | LR: {current_lr:.6f}")
+
+        # Compute occlusion sensitivity at intervals (epoch 1 and every occlusion_interval epochs)
+        if epoch == 1 or epoch % occlusion_interval == 0:
+            print(f"\n{'='*80}")
+            print(f"Computing occlusion sensitivity at epoch {epoch}...")
+            print(f"{'='*80}")
+            occlusion = compute_occlusion_sensitivity(model, trainloader, criterion, device)
+            occlusion_data[epoch] = {
+                'maps': occlusion['occlusion_maps'],
+                'images': occlusion['sample_images'],
+                'labels': occlusion['sample_labels'],
+                'train_acc': train_acc,
+                'test_acc': test_acc,
+                'gap': gap
+            }
+            print(f"Epoch {epoch} - Train: {train_acc:.2f}%, Test: {test_acc:.2f}%, Gap: {gap:.2f}%")
+            print(f"{'='*80}\n")
+
+        # Stop when we reach target train accuracy
+        if train_acc >= target_train_acc:
+            print(f"\nReached target train accuracy {target_train_acc}% at epoch {epoch}. Stopping.")
+            final_epoch = epoch
+            # Compute final occlusion if not already computed this epoch
+            if epoch not in occlusion_data:
+                print(f"\n{'='*80}")
+                print(f"Computing occlusion sensitivity at final epoch {epoch}...")
+                print(f"{'='*80}")
+                occlusion = compute_occlusion_sensitivity(model, trainloader, criterion, device)
+                occlusion_data[epoch] = {
+                    'maps': occlusion['occlusion_maps'],
+                    'images': occlusion['sample_images'],
+                    'labels': occlusion['sample_labels'],
+                    'train_acc': train_acc,
+                    'test_acc': test_acc,
+                    'gap': gap
+                }
+                print(f"{'='*80}\n")
+            break
 
     # Return comprehensive results
     result = {
@@ -218,11 +267,9 @@ def train_model_multi_epoch(model, trainloader, testloader, device='cuda', lr=0.
         'final_test_loss': test_losses[-1],
         'final_test_acc': test_accs[-1],
         'final_generalization_gap': generalization_gaps[-1],
-        'epochs': epochs,
+        'total_epochs': final_epoch,
+        'occlusion_data': occlusion_data,
     }
-
-    # Add all occlusion data
-    result.update(occlusion_data)
 
     return result
 
@@ -248,8 +295,12 @@ def main():
                         help='Weight decay')
     parser.add_argument('--no_augment', action='store_true',
                         help='Disable train-time augmentation')
-    parser.add_argument('--epochs', type=int, default=1,
-                        help='Number of epochs to train (default: 1)')
+    parser.add_argument('--max_epochs', type=int, default=500,
+                        help='Maximum number of training epochs')
+    parser.add_argument('--target_train_acc', type=float, default=99.99,
+                        help='Target train accuracy to stop training')
+    parser.add_argument('--occlusion_interval', type=int, default=10,
+                        help='Compute occlusion maps every N epochs')
 
     args = parser.parse_args()
 
@@ -292,14 +343,16 @@ def main():
     pixel_location = (16, 16)
 
     print(f"\n{'='*80}")
-    print(f"Experiment 6: {model_name} Full Depth - Occlusion ({args.epochs} epoch(s))")
+    print(f"Experiment 6: {model_name} Full Depth - Occlusion (until {args.target_train_acc}%)")
     print(f"{'='*80}")
     print(f"Architecture:     {model_name}")
     print(f"Num Layers:       {full_depth} (full depth)")
     print(f"Special Pixel:    {pixel_location} (center)")
     print(f"Noise Level:      {noise_level:.4f} (always correct)")
     print(f"Seed:             {args.seed}")
-    print(f"Epochs:           {args.epochs}")
+    print(f"Max Epochs:       {args.max_epochs}")
+    print(f"Target Acc:       {args.target_train_acc}%")
+    print(f"Occlusion Interval: Every {args.occlusion_interval} epochs")
     print(f"Batch Size:       {args.batch_size}")
     print(f"Device:           {args.device}")
     print(f"{'='*80}\n")
@@ -314,10 +367,12 @@ def main():
         augment=(not args.no_augment)
     )
 
-    # Train model for specified epochs
+    # Train model until target accuracy
     metrics = train_model_multi_epoch(
         model, trainloader, testloader, device=args.device,
-        lr=args.lr, weight_decay=args.weight_decay, epochs=args.epochs
+        lr=args.lr, weight_decay=args.weight_decay,
+        max_epochs=args.max_epochs, target_train_acc=args.target_train_acc,
+        occlusion_interval=args.occlusion_interval
     )
 
     # Prepare results
@@ -327,42 +382,49 @@ def main():
         'noise_level': noise_level,
         'pixel_location': pixel_location,
         'seed': args.seed,
-        'epochs': args.epochs,
-        'train_accs': metrics['train_accs'],
-        'test_accs': metrics['test_accs'],
-        'generalization_gaps': metrics['generalization_gaps'],
-        'train_losses': metrics['train_losses'],
-        'test_losses': metrics['test_losses'],
+        'total_epochs': metrics['total_epochs'],
+        'train_accs': np.array(metrics['train_accs']),
+        'test_accs': np.array(metrics['test_accs']),
+        'generalization_gaps': np.array(metrics['generalization_gaps']),
+        'train_losses': np.array(metrics['train_losses']),
+        'test_losses': np.array(metrics['test_losses']),
         'final_train_acc': metrics['final_train_acc'],
         'final_test_acc': metrics['final_test_acc'],
         'final_generalization_gap': metrics['final_generalization_gap'],
     }
 
-    # Add all occlusion data for each epoch
-    for epoch in range(1, args.epochs + 1):
-        occlusion_key = f'occlusion_epoch{epoch}'
-        if occlusion_key in metrics:
-            result[f'occlusion_maps_epoch{epoch}'] = metrics[occlusion_key]['occlusion_maps']
-            result[f'sample_images_epoch{epoch}'] = metrics[occlusion_key]['sample_images']
-            result[f'sample_labels_epoch{epoch}'] = metrics[occlusion_key]['sample_labels']
+    # Add occlusion data for each epoch it was computed
+    occlusion_epochs = sorted(metrics['occlusion_data'].keys())
+    result['occlusion_epochs'] = np.array(occlusion_epochs)
+    for epoch in occlusion_epochs:
+        occ = metrics['occlusion_data'][epoch]
+        result[f'occlusion_maps_epoch{epoch}'] = occ['maps']
+        result[f'sample_images_epoch{epoch}'] = occ['images']
+        result[f'occlusion_train_acc_epoch{epoch}'] = occ['train_acc']
+        result[f'occlusion_test_acc_epoch{epoch}'] = occ['test_acc']
+        result[f'occlusion_gap_epoch{epoch}'] = occ['gap']
+
+    is_valid = metrics['final_train_acc'] >= args.target_train_acc
 
     print(f"\n{'='*80}")
-    print(f"Training Complete")
+    if is_valid:
+        print(f"Training Complete (Valid - Reached {args.target_train_acc}%)")
+    else:
+        print(f"Training Complete (Invalid - Did Not Reach {args.target_train_acc}%)")
     print(f"{'='*80}")
+    print(f"Total Epochs:           {metrics['total_epochs']}")
     print(f"Final Train Accuracy:   {metrics['final_train_acc']:.2f}%")
     print(f"Final Test Accuracy:    {metrics['final_test_acc']:.2f}%")
     print(f"Final Gen. Gap:         {metrics['final_generalization_gap']:.2f}%")
+    print(f"Occlusion epochs:       {occlusion_epochs}")
     print(f"{'='*80}\n")
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Naming convention: vgg{X}_seed{seed}_results.npz or vgg{X}_seed{seed}_{N}epochs_results.npz
+    # Naming convention: vgg{X}_seed{seed}_results.npz
     arch_num = model_name.lower()
-    if args.epochs == 1:
-        save_path = f"{args.output_dir}/{arch_num}_seed{args.seed}_results.npz"
-    else:
-        save_path = f"{args.output_dir}/{arch_num}_seed{args.seed}_{args.epochs}epochs_results.npz"
+    save_path = f"{args.output_dir}/{arch_num}_seed{args.seed}_results.npz"
 
     np.savez(save_path, **result)
     print(f"Results saved to: {save_path}\n")

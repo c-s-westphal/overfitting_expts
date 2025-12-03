@@ -81,7 +81,10 @@ python3.9 -u experiments/exp6_single_run.py \
     --seed "$seed" \
     --batch_size 128 \
     --device cuda \
-    --output_dir results/exp6
+    --output_dir results/exp6 \
+    --max_epochs 500 \
+    --target_train_acc 99.99 \
+    --occlusion_interval 10
 
 date
 echo "Training completed: $arch seed=$seed"

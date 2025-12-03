@@ -72,7 +72,9 @@ python3.9 -u experiments/exp4_single_run.py \
     --batch_size 128 \
     --device cuda \
     --output_dir results/exp4 \
-    --max_epochs 200
+    --max_epochs 500 \
+    --target_train_acc 99.99 \
+    --occlusion_interval 10
 
 date
 echo "Training completed: MLP n_layers=$n_layers seed=$seed"
