@@ -2,8 +2,8 @@
 Experiment 9: Retraining-based pruning analysis for MNIST classification.
 
 This experiment:
-1. Trains a small MLP on MNIST (binary, 5-class, or full) with progressive per-layer dropout
-   (layer 1: 0, layer 2: dropout_base, layer 3: 2*dropout_base, etc.)
+1. Trains a small MLP on MNIST (binary, 5-class, or full) with constant dropout
+   (same dropout rate applied at every layer)
 2. For each layer, computes:
    - MI between all neuron subsets and output (class labels) using LNC-KSG
    - q = minimum neurons needed to recover train accuracy after retraining downstream layers
@@ -36,10 +36,10 @@ class MLP_Binary(nn.Module):
     Architecture:
     - Input: 784 (28x28 flattened)
     - N hidden layers with M neurons each
-    - Progressive per-layer dropout (layer 1: 0, layer 2: 0.1, layer 3: 0.2, etc.)
+    - Constant dropout applied at every layer
     - Output: num_classes (2 for binary, 10 for full MNIST)
     """
-    def __init__(self, n_layers=5, neurons_per_layer=5, num_classes=2, dropout_base=0.1):
+    def __init__(self, n_layers=5, neurons_per_layer=5, num_classes=2, dropout_rate=0.0):
         super(MLP_Binary, self).__init__()
 
         self.n_layers = n_layers
@@ -51,23 +51,23 @@ class MLP_Binary(nn.Module):
         self.activations = nn.ModuleList()
         self.dropouts = nn.ModuleList()
 
-        # First hidden layer: 784 -> neurons_per_layer (no dropout)
+        # First hidden layer: 784 -> neurons_per_layer
         self.hidden_layers.append(nn.Linear(self.input_dim, neurons_per_layer))
         self.activations.append(nn.ReLU())
-        self.dropouts.append(nn.Dropout(p=0.0))  # Layer 1: no dropout
+        self.dropouts.append(nn.Dropout(p=dropout_rate))
 
-        # Additional hidden layers with progressive dropout
+        # Additional hidden layers with constant dropout
         for i in range(1, n_layers):
             self.hidden_layers.append(nn.Linear(neurons_per_layer, neurons_per_layer))
             self.activations.append(nn.ReLU())
-            # Layer i+1 has dropout = i * dropout_base (0.1, 0.2, 0.3, 0.4 for layers 2-5)
-            self.dropouts.append(nn.Dropout(p=i * dropout_base))
+            self.dropouts.append(nn.Dropout(p=dropout_rate))
 
         # Output layer
         self.output_layer = nn.Linear(neurons_per_layer, num_classes)
 
-        # Store dropout rates for reference
-        self.dropout_rates = [0.0] + [i * dropout_base for i in range(1, n_layers)]
+        # Store dropout rate for reference
+        self.dropout_rate = dropout_rate
+        self.dropout_rates = [dropout_rate] * n_layers
 
         self._initialize_weights()
 
@@ -673,8 +673,8 @@ def main():
                         help='Maximum epochs for initial training')
     parser.add_argument('--target_train_acc', type=float, default=100.0,
                         help='Target train accuracy')
-    parser.add_argument('--dropout_base', type=float, default=0.1,
-                        help='Base dropout rate (layer i has dropout = (i-1)*base, default: 0.1)')
+    parser.add_argument('--dropout_rate', type=float, default=0.0,
+                        help='Constant dropout rate applied at every layer (default: 0.0)')
 
     args = parser.parse_args()
 
@@ -708,11 +708,7 @@ def main():
     print(f"Task:              {task_name}")
     print(f"Seed:              {args.seed}")
     print(f"Device:            {args.device}")
-    print(f"Dropout base:      {args.dropout_base}")
-
-    # Show per-layer dropout rates
-    dropout_rates = [0.0] + [i * args.dropout_base for i in range(1, args.n_layers)]
-    print(f"Per-layer dropout: {dropout_rates}")
+    print(f"Dropout rate:      {args.dropout_rate} (constant at every layer)")
     print(f"Target Train Acc:  {args.target_train_acc}%")
     print(f"{'='*80}\n")
 
@@ -721,7 +717,7 @@ def main():
         n_layers=args.n_layers,
         neurons_per_layer=args.neurons_per_layer,
         num_classes=num_classes,
-        dropout_base=args.dropout_base
+        dropout_rate=args.dropout_rate
     )
     print(f"Model parameters: {model.count_parameters():,}")
 
@@ -851,7 +847,7 @@ def main():
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)
-    save_path = f"{args.output_dir}/exp9_{args.dataset}_L{args.n_layers}_N{args.neurons_per_layer}_D{args.dropout_base}_seed{args.seed}.npz"
+    save_path = f"{args.output_dir}/exp9_{args.dataset}_L{args.n_layers}_N{args.neurons_per_layer}_D{args.dropout_rate}_seed{args.seed}.npz"
 
     # Flatten layer_results for npz saving
     flat_results = {
@@ -863,7 +859,7 @@ def main():
         'train_acc': results['train_acc'],
         'test_acc': results['test_acc'],
         'epochs': results['epochs'],
-        'dropout_base': args.dropout_base,
+        'dropout_rate': args.dropout_rate,
         'dropout_rates': np.array(model.dropout_rates),
         'layer_pruning_ratios': results['layer_pruning_ratios'],
         'layer_avg_mis': results['layer_avg_mis'],

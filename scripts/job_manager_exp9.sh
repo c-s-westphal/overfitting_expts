@@ -7,7 +7,7 @@
 #$ -S /bin/bash
 #$ -j y
 #$ -N exp9_pruning_retrain
-#$ -t 1-80
+#$ -t 1-15
 set -euo pipefail
 
 hostname
@@ -49,19 +49,19 @@ mkdir -p data
 # 4.  Extract task-specific parameters
 # ---------------------------------------------------------------------
 # Format per line in jobs_exp9.txt:
-#   <seed> <n_layers> <dropout_base> <dataset>
+#   <seed> <n_layers> <dropout_rate> <dataset>
 seed=$(sed -n ${number}p "$paramfile" | awk '{print $1}')
 n_layers=$(sed -n ${number}p "$paramfile" | awk '{print $2}')
-dropout_base=$(sed -n ${number}p "$paramfile" | awk '{print $3}')
+dropout_rate=$(sed -n ${number}p "$paramfile" | awk '{print $3}')
 dataset=$(sed -n ${number}p "$paramfile" | awk '{print $4}')
 
-if [[ -z "$seed" || -z "$n_layers" || -z "$dropout_base" || -z "$dataset" ]]; then
+if [[ -z "$seed" || -z "$n_layers" || -z "$dropout_rate" || -z "$dataset" ]]; then
   echo "Invalid job line at index $number in $paramfile" >&2
   exit 1
 fi
 
 date
-echo "Running exp9 Retraining-based Pruning: seed=$seed n_layers=$n_layers dropout_base=$dropout_base dataset=$dataset"
+echo "Running exp9 Retraining-based Pruning: seed=$seed n_layers=$n_layers dropout_rate=$dropout_rate dataset=$dataset"
 
 # ---------------------------------------------------------------------
 # 5.  Run single experiment
@@ -71,13 +71,13 @@ python3.9 -u experiments/exp9_single_run.py \
     --seed "$seed" \
     --dataset "$dataset" \
     --n_layers "$n_layers" \
-    --neurons_per_layer 4 \
+    --neurons_per_layer 5 \
     --batch_size 128 \
     --device cuda \
     --output_dir results/exp9 \
     --max_epochs 200 \
     --lr 0.001 \
-    --dropout_base "$dropout_base"
+    --dropout_rate "$dropout_rate"
 
 date
-echo "Training completed: exp9 seed=$seed n_layers=$n_layers dropout_base=$dropout_base dataset=$dataset"
+echo "Training completed: exp9 seed=$seed n_layers=$n_layers dropout_rate=$dropout_rate dataset=$dataset"
